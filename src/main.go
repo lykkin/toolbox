@@ -40,5 +40,5 @@ func main() {
     r.HandleFunc("/", NewSpanCollector(&spans)).Methods("POST")
     r.HandleFunc("/", NewSpanViewer(&spans)).Methods("GET")
     http.Handle("/", r)
-    log.Fatal(http.ListenAndServe(":8080", nil))
+    log.Fatal(http.ListenAndServe(":12345", nil))
 }

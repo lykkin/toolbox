@@ -1,0 +1,13 @@
+version: '3'
+
+services:
+    collector:
+        build: .
+        ports:
+            - "12345:12345"
+        restart: on-failure
+        depends_on:
+            - cassandra
+
+    cassandra:
+        image: cassandra:3.9
