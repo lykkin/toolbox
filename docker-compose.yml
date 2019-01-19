@@ -1,4 +1,4 @@
-version: '3'
+version: '3.2'
 
 services:
     collector:
@@ -8,6 +8,8 @@ services:
         restart: on-failure
         depends_on:
             - cassandra
+        links:
+            - cassandra
 
     cassandra:
-        image: cassandra:3.9
+        build: ./db
