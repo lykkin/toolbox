@@ -3,12 +3,14 @@ package main
 import (
     "encoding/json"
 	"fmt"
-    "net/http"
-    "io/ioutil"
     "log"
+    "io/ioutil"
+    "net/http"
+    "reflect"
+    "strings"
 
-    "github.com/gorilla/mux"
     "github.com/gocql/gocql"
+    "github.com/gorilla/mux"
 )
 
 type Span struct {
@@ -25,33 +27,60 @@ func NewSpanCollector(session *gocql.Session) func(http.ResponseWriter, *http.Re
         incomingSpans := []Span{}
         body, _ := ioutil.ReadAll(r.Body)
         json.Unmarshal(body, &incomingSpans)
-        query := "BEGIN BATCH "
+
         var values []interface{} = make([]interface{}, 0)
+
+        query := "BEGIN BATCH "
         for _, span := range incomingSpans {
-            query += "INSERT INTO span_collector.span (name, span_id, parent_id, trace_id, start_time, finish_time) VALUES (?, ?, ?, ?, ?, ?);"
-            values = append(values, span.Name, span.SpanId, span.ParentId, span.TraceId, span.StartTime, span.FinishTime)
+            spanType := reflect.TypeOf(span)
+            numFields := spanType.NumField()
+            fields := make([]string, numFields)
+            valuePlaceholders := make([]string, numFields)
+            for i := 0; i < numFields; i++ {
+                field := spanType.Field(i)
+                fields[i] = field.Tag.Get("json")
+                valuePlaceholders[i] = "?"
+                values = append(values, getField(&span, field.Name))
+            }
+
+            query += "INSERT INTO span_collector.span (" + strings.Join(fields, ", ") + ") VALUES (" + strings.Join(valuePlaceholders, ", ") + ");"
         }
         query += "APPLY BATCH;"
         log.Printf("From insert: %s", session.Query(query, values...).Exec())
     }
 }
 
+func getField(s *Span, field string) interface{} {
+    r := reflect.ValueOf(s)
+    f := reflect.Indirect(r).FieldByName(field)
+    return f.Interface()
+}
+
 func NewSpanViewer(session *gocql.Session) func(http.ResponseWriter, *http.Request) {
     return func(w http.ResponseWriter, r *http.Request) {
-        iter := session.Query("SELECT name, span_id, trace_id, parent_id, start_time, finish_time FROM span_collector.span;").Iter()
-        log.Print(iter)
         spans := make([]Span, 0)
 
-        var name string
-        var traceId string
-        var spanId string
-        var parentId string
-        var startTime float64
-        var finishTime float64
+        iter := session.Query("SELECT * FROM span_collector.span;").Iter()
+        for {
+            row := make(map[string]interface{})
+            if !iter.MapScan(row) {
+                break
+            }
 
-        for iter.Scan(&name, &spanId, &traceId, &parentId, &startTime, &finishTime) {
-            spans = append(spans, Span{traceId, spanId, parentId, name, startTime, finishTime})
+            var span Span
+
+            spanType := reflect.TypeOf(span)
+            spanValue := reflect.ValueOf(&span).Elem()
+            numFields := spanValue.NumField()
+            for i := 0; i < numFields; i++ {
+                field := spanType.Field(i)
+                tag := field.Tag.Get("json")
+                spanValue.FieldByName(field.Name).Set(reflect.ValueOf(row[tag]))
+            }
+
+            spans = append(spans, span)
         }
+
 
         if err := iter.Close(); err != nil {
             log.Fatal(err)
