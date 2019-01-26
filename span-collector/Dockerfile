@@ -1,5 +1,6 @@
 FROM golang as builder
-ADD ./src /go/src/span-collector
+ADD ./span-collector/src /go/src/span-collector
+ADD ./shared /go/src/shared
 WORKDIR /go/src/span-collector
 RUN go get .
 ENV GOBIN /go/bin

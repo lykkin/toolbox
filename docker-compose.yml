@@ -2,7 +2,9 @@ version: '3.2'
 
 services:
     collector:
-        build: .
+        build:
+            context: .
+            dockerfile: span-collector/Dockerfile
         ports:
             - "12345:12345"
         restart: on-failure
