@@ -46,13 +46,17 @@ func NewSpanCollector(session *gocql.Session) func(http.ResponseWriter, *http.Re
 			valuePlaceholders := make([]string, numFields)
 			for i := 0; i < numFields; i++ {
 				field := spanType.Field(i)
-				tag := field.Tag.Get("query")
-				if tag == "" {
+				cTag, ok := field.Tag.Lookup("cassandra")
+				if !ok {
+					continue
+				}
+				tag, isQuery := field.Tag.Lookup("query")
+				if !isQuery {
 					values = append(values, getField(&span, field.Name))
 				} else {
 					values = append(values, queryParams[tag][0])
 				}
-				fields[i] = field.Tag.Get("cassandra")
+				fields[i] = cTag
 				valuePlaceholders[i] = "?"
 			}
 
@@ -123,5 +127,6 @@ func main() {
 	r.HandleFunc("/", NewSpanCollector(session)).Methods("POST")
 	r.HandleFunc("/", NewSpanViewer(session)).Methods("GET")
 	http.Handle("/", r)
+	log.Print("Listening on port 12345!")
 	log.Fatal(http.ListenAndServe(":12345", nil))
 }
