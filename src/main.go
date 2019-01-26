@@ -14,26 +14,23 @@ import (
 )
 
 type Span struct {
-	TraceId    string            `json:"trace_id"`
-	SpanId     string            `json:"span_id"`
-	ParentId   string            `json:"parent_id"`
-	Name       string            `json:"name"`
-	StartTime  float64           `json:"start_time"`
-	FinishTime float64           `json:"finish_time"`
-	Category   string            `json:"category"`
-	Tags       map[string]string `json:"tags"`
-	LicenseKey string
-	EntityName string
-	EntityId   string
+    TraceId    string            `cassandra:"trace_id" json:"trace_id"`
+    SpanId     string            `cassandra:"span_id" json:"span_id"`
+    ParentId   string            `cassandra:"parent_id" json:"parent_id"`
+    Name       string            `cassandra:"name" json:"name"`
+    StartTime  float64           `cassandra:"start_time" json:"start_time"`
+    FinishTime float64           `cassandra:"finish_time" json:"finish_time"`
+    Category   string            `cassandra:"category" json:"category"`
+    Tags       map[string]string `cassandra:"tags" json:"tags"`
+    LicenseKey string            `cassandra:"license_key" json:"license_key" query:"license_key"`
+    EntityName string            `cassandra:"entity_name" json:"entity_name" query:"entity_name"`
+    EntityId   string            `cassandra:"entity_id" json:"entity_id" query:"entity_id"`
 }
 
 func NewSpanCollector(session *gocql.Session) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		queryParams := r.URL.Query()
-		licenseKey := queryParams["license_key"][0]
-		entityName := queryParams["entity_name"][0]
-		entityId := queryParams["entity_id"][0]
 
 		incomingSpans := []Span{}
 		body, _ := ioutil.ReadAll(r.Body)
@@ -43,25 +40,28 @@ func NewSpanCollector(session *gocql.Session) func(http.ResponseWriter, *http.Re
 
 		query := "BEGIN BATCH "
 		for _, span := range incomingSpans {
-			spanType := reflect.TypeOf(span)
-			numFields := spanType.NumField()
-			fields := make([]string, 0)
-			valuePlaceholders := make([]string, 0)
+            spanType := reflect.TypeOf(span)
+            numFields := spanType.NumField()
+			fields := make([]string, numFields)
+			valuePlaceholders := make([]string, numFields)
 			for i := 0; i < numFields; i++ {
 				field := spanType.Field(i)
-				jTag := field.Tag.Get("json")
-				if jTag == "" {
-					continue
-				}
-				fields = append(fields, jTag)
-				valuePlaceholders = append(valuePlaceholders, "?")
-				values = append(values, getField(&span, field.Name))
+                tag := field.Tag.Get("query")
+                if tag == "" {
+                    values = append(values, getField(&span, field.Name))
+                } else {
+                    values = append(values, queryParams[tag][0])
+                }
+                fields[i] = field.Tag.Get("cassandra")
+				valuePlaceholders[i] = "?"
 			}
 
-			query += "INSERT INTO span_collector.span (license_key, entity_name, entity_id, " + strings.Join(fields, ", ") + ") VALUES (\"" + licenseKey + "\",\"" + entityName + "\",\"" + entityId + "\"," + strings.Join(valuePlaceholders, ", ") + ");"
+			query += "INSERT INTO span_collector.span (" + strings.Join(fields, ", ") + ") VALUES (" + strings.Join(valuePlaceholders, ", ") + ");"
 		}
 		query += "APPLY BATCH;"
 		log.Printf("The query is: %s", query)
+        log.Printf("The values are: %s", values)
+		log.Printf("The query params are %s", queryParams)
 		log.Printf("From insert: %s", session.Query(query, values...).Exec())
 	}
 }
@@ -90,13 +90,12 @@ func NewSpanViewer(session *gocql.Session) func(http.ResponseWriter, *http.Reque
 			numFields := spanValue.NumField()
 			for i := 0; i < numFields; i++ {
 				field := spanType.Field(i)
-				tag := field.Tag.Get("json")
-				spanValue.FieldByName(field.Name).Set(reflect.ValueOf(row[tag]))
+				tag := field.Tag.Get("cassandra")
+                val := reflect.ValueOf(row[tag])
+                if val.IsValid() {
+                    spanValue.FieldByName(field.Name).Set(val)
+                }
 			}
-
-			span.LicenseKey = row["license_key"].(string)
-			span.EntityName = row["entity_name"].(string)
-			span.EntityId = row["entity_id"].(string)
 
 			spans = append(spans, span)
 		}
