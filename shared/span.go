@@ -13,10 +13,10 @@ type Span struct {
 	StartTime  float64           `cassandra:"start_time" json:"start_time"`
 	FinishTime float64           `cassandra:"finish_time" json:"finish_time"`
 	Category   string            `cassandra:"category" json:"category"`
-	Tags       map[string]string `cassandra:"tags" json:"tags"`
+	Tags       map[string]string `cassandra:"tags" json:"tags,omitempty"`
 	LicenseKey string            `cassandra:"license_key" json:"license_key" query:"license_key"`
 	EntityName string            `cassandra:"entity_name" json:"entity_name" query:"entity_name"`
-	EntityId   string            `cassandra:"entity_id" json:"entity_id" query:"entity_id"`
+	EntityId   string            `cassandra:"entity_id" json:"entity_id,omitempty" query:"entity_id"`
 }
 
 func FromRow(row map[string]interface{}) Span {
