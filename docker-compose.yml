@@ -13,5 +13,15 @@ services:
         links:
             - cassandra
 
+    processor:
+        build:
+            context: .
+            dockerfile: span-processor/Dockerfile
+        restart: on-failure
+        depends_on:
+            - cassandra
+        links:
+            - cassandra
+
     cassandra:
         build: ./db
