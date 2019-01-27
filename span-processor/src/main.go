@@ -2,7 +2,7 @@ package main
 
 import (
 	"log"
-    "time"
+	"time"
 
 	"shared"
 
@@ -22,6 +22,25 @@ type SpanEvent struct {
 	EntityId   string            `json:"appId,omitempty"`
 }
 
+func SpanToEvent(s span.Span) SpanEvent {
+	return SpanEvent{
+		TraceId:    s.TraceId,
+		SpanId:     s.SpanId,
+		ParentId:   s.ParentId,
+		Name:       s.Name,
+		Timestamp:  uint64(s.StartTime),
+		Duration:   s.FinishTime - s.StartTime,
+		Category:   s.Category,
+		Tags:       s.Tags,
+		EntityName: s.EntityName,
+		EntityId:   s.EntityId,
+	}
+}
+
+func SendEvents(licenseKey string, events []SpanEvent) {
+	// TODO: SEND TO SERVERS
+}
+
 func main() {
 	cluster := gocql.NewCluster("cassandra")
 	cluster.Keyspace = "span_collector"
@@ -31,10 +50,10 @@ func main() {
 		log.Fatal(err)
 	}
 	defer session.Close()
-    log.Print("Started processing!")
-    var HarvestPeriod time.Duration = 10 // In seconds
-    for {
-		spans := make([]span.Span, 0)
+	log.Print("Started processing!")
+	var HarvestPeriod time.Duration = 10 // In seconds
+	for {
+		LicenseKeyToEvents := make(map[string][]SpanEvent)
 
 		iter := session.Query("SELECT * FROM span_collector.span;").Iter()
 		for {
@@ -43,20 +62,22 @@ func main() {
 				break
 			}
 
-			spans = append(spans, span.FromRow(row))
+			// TODO: MARK SPAN AS SENT
+			s := span.FromRow(row)
+			licenseKey := s.LicenseKey
+			LicenseKeyToEvents[licenseKey] = append(LicenseKeyToEvents[licenseKey], SpanToEvent(s))
 		}
 
 		if err := iter.Close(); err != nil {
 			log.Fatal(err)
 		}
 
-        if len(spans) > 0 {
-            log.Printf("got %s", spans)
-        }
+		for licenseKey, events := range LicenseKeyToEvents {
+			log.Printf("got %s: %s", licenseKey, events)
+		}
 
-        log.Print("waiting")
-        timer1 := time.NewTimer(HarvestPeriod * time.Second)
-        <-timer1.C
-        // PROCESS SPANS HERE
-    }
+		log.Print("waiting")
+		timer1 := time.NewTimer(HarvestPeriod * time.Second)
+		<-timer1.C
+	}
 }
