@@ -1,5 +1,5 @@
 FROM golang as builder
-ADD ./span-processor/src /go/src/span-processor
+ADD ./processor/src /go/src/span-processor
 ADD ./shared /go/src/shared
 WORKDIR /go/src/span-processor
 RUN go get .
