@@ -37,9 +37,20 @@ func SpanToEvent(s span.Span) SpanEvent {
 	}
 }
 
-func SendEvents(licenseKey string, events []SpanEvent, errChan chan error) {
+type RequestResult struct {
+	Err        error
+	LicenseKey string
+}
+
+func BuildUpdateQuery(events []SpanEvent) string {
+	//TODO: figure out how to mark these as seen
+	return ""
+}
+
+func SendEvents(licenseKey string, events []SpanEvent, errChan chan RequestResult) {
+	//TODO: actually send the events
 	log.Printf("sending %s: %s", licenseKey, events)
-	errChan <- nil
+	errChan <- RequestResult{nil, licenseKey}
 }
 
 func main() {
@@ -74,20 +85,25 @@ func main() {
 		}
 
 		numRequestsAwaiting := 0
-		errChan := make(chan error)
+		comms := make(chan RequestResult)
 		for licenseKey, events := range LicenseKeyToEvents {
-			go SendEvents(licenseKey, events, errChan)
+			go SendEvents(licenseKey, events, comms)
 			numRequestsAwaiting++
-			log.Print("queuing #%s, %s: %s", numRequestsAwaiting, licenseKey, events)
 		}
 
+		updateQuery := "BEGIN BATCH "
 		for ; numRequestsAwaiting != 0; numRequestsAwaiting-- {
-			err := <-errChan
-			log.Printf("hi %s", err)
-			if err != nil {
-				// HANDLE ERROR
+			result := <-comms
+			if result.Err != nil {
+				log.Printf("ran into an error while sending events: %s", result.Err)
+				continue
 			}
+
+			// Build query to mark events as seen
+			updateQuery += BuildUpdateQuery(LicenseKeyToEvents[result.LicenseKey])
 		}
+
+		updateQuery += "APPLY BATCH;"
 
 		log.Print("waiting")
 		timer1 := time.NewTimer(HarvestPeriod * time.Second)
