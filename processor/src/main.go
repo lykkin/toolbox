@@ -37,8 +37,9 @@ func SpanToEvent(s span.Span) SpanEvent {
 	}
 }
 
-func SendEvents(licenseKey string, events []SpanEvent) {
-	// TODO: SEND TO SERVERS
+func SendEvents(licenseKey string, events []SpanEvent, errChan chan error) {
+	log.Printf("sending %s: %s", licenseKey, events)
+	errChan <- nil
 }
 
 func main() {
@@ -72,8 +73,20 @@ func main() {
 			log.Fatal(err)
 		}
 
+		numRequestsAwaiting := 0
+		errChan := make(chan error)
 		for licenseKey, events := range LicenseKeyToEvents {
-			log.Printf("got %s: %s", licenseKey, events)
+			go SendEvents(licenseKey, events, errChan)
+			numRequestsAwaiting++
+			log.Print("queuing #%s, %s: %s", numRequestsAwaiting, licenseKey, events)
+		}
+
+		for ; numRequestsAwaiting != 0; numRequestsAwaiting-- {
+			err := <-errChan
+			log.Printf("hi %s", err)
+			if err != nil {
+				// HANDLE ERROR
+			}
 		}
 
 		log.Print("waiting")
