@@ -61,7 +61,7 @@ func main() {
 	var HarvestPeriod time.Duration = 10 // In seconds
 	for {
 		LicenseKeyToEvents := make(map[string][]SpanEvent)
-		LicenseKeyToTraceIds := make(map[string][]string)
+		LicenseKeyToTraceIds := make(map[string]map[string]bool)
 
 		iter := session.Query("SELECT * FROM span_collector.to_process;").Iter()
 		for {
@@ -70,10 +70,12 @@ func main() {
 				break
 			}
 
-			// TODO: MARK SPAN AS SENT
 			s := span.FromRow(row)
 			licenseKey := s.LicenseKey
-			LicenseKeyToTraceIds[licenseKey] = append(LicenseKeyToTraceIds[licenseKey], s.TraceId)
+			if LicenseKeyToTraceIds[licenseKey] == nil {
+				LicenseKeyToTraceIds[licenseKey] = make(map[string]bool)
+			}
+			LicenseKeyToTraceIds[licenseKey][s.TraceId] = true
 			LicenseKeyToEvents[licenseKey] = append(LicenseKeyToEvents[licenseKey], SpanToEvent(s))
 		}
 
@@ -99,13 +101,15 @@ func main() {
 
 			// Build query to mark events as seen
 			licenseKey := result.LicenseKey
-			for _, traceId := range LicenseKeyToTraceIds[licenseKey] {
+			for traceId, _ := range LicenseKeyToTraceIds[licenseKey] {
 				query += "DELETE FROM span_collector.to_process WHERE trace_id=?;"
 				values = append(values, traceId)
 			}
 		}
 
 		query += "APPLY BATCH;"
+		log.Printf("EXECUTING QUERY: %s", query)
+		log.Printf("WITH VALUES: %s", values)
 		log.Printf("FROM DELETE: %s", session.Query(query, values...).Exec())
 
 		log.Print("waiting")
