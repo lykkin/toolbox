@@ -42,11 +42,6 @@ type RequestResult struct {
 	LicenseKey string
 }
 
-func BuildUpdateQuery(events []SpanEvent) string {
-	//TODO: figure out how to mark these as seen
-	return ""
-}
-
 func SendEvents(licenseKey string, events []SpanEvent, errChan chan RequestResult) {
 	//TODO: actually send the events
 	log.Printf("sending %s: %s", licenseKey, events)
@@ -66,8 +61,9 @@ func main() {
 	var HarvestPeriod time.Duration = 10 // In seconds
 	for {
 		LicenseKeyToEvents := make(map[string][]SpanEvent)
+		LicenseKeyToTraceIds := make(map[string][]string)
 
-		iter := session.Query("SELECT * FROM span_collector.span;").Iter()
+		iter := session.Query("SELECT * FROM span_collector.to_process;").Iter()
 		for {
 			row := make(map[string]interface{})
 			if !iter.MapScan(row) {
@@ -77,6 +73,7 @@ func main() {
 			// TODO: MARK SPAN AS SENT
 			s := span.FromRow(row)
 			licenseKey := s.LicenseKey
+			LicenseKeyToTraceIds[licenseKey] = append(LicenseKeyToTraceIds[licenseKey], s.TraceId)
 			LicenseKeyToEvents[licenseKey] = append(LicenseKeyToEvents[licenseKey], SpanToEvent(s))
 		}
 
@@ -91,7 +88,8 @@ func main() {
 			numRequestsAwaiting++
 		}
 
-		updateQuery := "BEGIN BATCH "
+		query := "BEGIN BATCH "
+		values := make([]interface{}, 0)
 		for ; numRequestsAwaiting != 0; numRequestsAwaiting-- {
 			result := <-comms
 			if result.Err != nil {
@@ -100,10 +98,15 @@ func main() {
 			}
 
 			// Build query to mark events as seen
-			updateQuery += BuildUpdateQuery(LicenseKeyToEvents[result.LicenseKey])
+			licenseKey := result.LicenseKey
+			for _, traceId := range LicenseKeyToTraceIds[licenseKey] {
+				query += "DELETE FROM span_collector.to_process WHERE trace_id=?;"
+				values = append(values, traceId)
+			}
 		}
 
-		updateQuery += "APPLY BATCH;"
+		query += "APPLY BATCH;"
+		log.Printf("FROM DELETE: %s", session.Query(query, values...).Exec())
 
 		log.Print("waiting")
 		timer1 := time.NewTimer(HarvestPeriod * time.Second)

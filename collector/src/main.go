@@ -26,7 +26,7 @@ func NewSpanCollector(session *gocql.Session) func(http.ResponseWriter, *http.Re
 
 		query := "BEGIN BATCH "
 		for _, span := range incomingSpans {
-			spanQuery, spanValues := span.GetInsertQueryAndValues(queryParams)
+			spanQuery, spanValues := span.GetInsertQueryAndValues(queryParams, []string{"span_collector.span", "span_collector.to_process"})
 
 			query += spanQuery
 			values = append(values, spanValues...)

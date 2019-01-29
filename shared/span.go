@@ -35,7 +35,7 @@ func FromRow(row map[string]interface{}) Span {
 	return span
 }
 
-func (span Span) GetInsertQueryAndValues(queryParams map[string][]string) (string, []interface{}) {
+func (span Span) GetInsertQueryAndValues(queryParams map[string][]string, destinations []string) (string, []interface{}) {
 	spanType := reflect.TypeOf(span)
 	numFields := spanType.NumField()
 	fields := make([]string, numFields)
@@ -58,7 +58,14 @@ func (span Span) GetInsertQueryAndValues(queryParams map[string][]string) (strin
 		}
 		fields[i] = cTag
 	}
-	return "INSERT INTO span_collector.span (" + strings.Join(fields, ", ") + ") VALUES (" + strings.Join(valuePlaceholders, ", ") + ");", values
+	query := ""
+	resVals := make([]interface{}, 0)
+	for _, dest := range destinations {
+		query += "INSERT INTO " + dest + "(" + strings.Join(fields, ", ") + ") VALUES (" + strings.Join(valuePlaceholders, ", ") + ");"
+		resVals = append(resVals, values...)
+	}
+
+	return query, resVals
 }
 
 func getField(s *Span, field string) interface{} {
