@@ -12,7 +12,6 @@ type Span struct {
 	Name       string            `cassandra:"name" json:"name"`
 	StartTime  float64           `cassandra:"start_time" json:"start_time"`
 	FinishTime float64           `cassandra:"finish_time" json:"finish_time"`
-	Category   string            `cassandra:"category" json:"category"`
 	Tags       map[string]string `cassandra:"tags" json:"tags,omitempty"`
 	LicenseKey string            `cassandra:"license_key" json:"license_key" query:"license_key"`
 	EntityName string            `cassandra:"entity_name" json:"entity_name" query:"entity_name"`

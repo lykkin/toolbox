@@ -19,7 +19,6 @@ type SpanEvent struct {
 	Name       string            `json:"name"`
 	Timestamp  uint64            `json:"timestamp"`
 	Duration   float64           `json:"durationMs"`
-	Category   string            `json:"-"` //category"`
 	Tags       map[string]string `json:"tags,omitempty"`
 	EntityName string            `json:"entityName"`
 	EntityId   string            `json:"entityId,omitempty"`
@@ -33,7 +32,6 @@ func SpanToEvent(s span.Span) SpanEvent {
 		Name:       s.Name,
 		Timestamp:  uint64(s.StartTime),
 		Duration:   s.FinishTime - s.StartTime,
-		Category:   s.Category,
 		Tags:       s.Tags,
 		EntityName: s.EntityName,
 		EntityId:   s.EntityId,
