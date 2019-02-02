@@ -72,7 +72,7 @@ func SendEvents(licenseKey string, events *[]SpanEvent, errChan chan RequestResu
 	defer res.Body.Close()
 
 	// TODO: parse response and propagate it to the main goroutine
-	errChan <- RequestResult{nil, licenseKey, new([]SpanEvent)}
+	errChan <- RequestResult{nil, licenseKey, nil}
 }
 
 func main() {
