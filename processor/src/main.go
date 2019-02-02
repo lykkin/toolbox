@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"shared"
@@ -43,19 +44,20 @@ func SpanToEvent(s span.Span, entityName string, entityId string) SpanEvent {
 type RequestResult struct {
 	Err        error
 	LicenseKey string
+	Events     *[]SpanEvent
 }
 
-func SendEvents(licenseKey string, events []SpanEvent, errChan chan RequestResult) {
-	payload := map[string][]SpanEvent{"spans": events}
+func SendEvents(licenseKey string, events *[]SpanEvent, errChan chan RequestResult) {
+	payload := map[string][]SpanEvent{"spans": *events}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		errChan <- RequestResult{err, ""}
+		errChan <- RequestResult{err, "", events}
 		return
 	}
 
 	req, err := http.NewRequest("POST", "https://staging-collector.newrelic.com/agent_listener/invoke_raw_method", bytes.NewBuffer(body))
 	if err != nil {
-		errChan <- RequestResult{err, ""}
+		errChan <- RequestResult{err, "", events}
 		return
 	}
 	// set query params and headers
@@ -70,7 +72,7 @@ func SendEvents(licenseKey string, events []SpanEvent, errChan chan RequestResul
 	defer res.Body.Close()
 
 	// TODO: parse response and propagate it to the main goroutine
-	errChan <- RequestResult{nil, licenseKey}
+	errChan <- RequestResult{nil, licenseKey, new([]SpanEvent)}
 }
 
 func main() {
@@ -84,7 +86,8 @@ func main() {
 	defer r.Close()
 
 	// used to break events out into payloads to send
-	LicenseKeyToEvents := make(map[string][]SpanEvent)
+    LicenseKeyToEvents := make(map[string][]SpanEvent)
+	lock := sync.RWMutex{}
 
 	var HarvestPeriod time.Duration = 10 // In seconds
 	go func() {
@@ -93,16 +96,17 @@ func main() {
 			if err != nil {
 				fmt.Printf("Consumer error: %v (%v)\n", err, m)
 				log.Fatal("dying")
-				break
 			}
 			fmt.Printf("message at offset %d: %s = %s\n", m.Offset, string(m.Key), string(m.Value))
 			var msg span.SpanMessage
 			json.Unmarshal(m.Value, &msg)
 			licenseKey := msg.LicenseKey
+			lock.Lock()
 			for _, s := range msg.Spans {
 				// record the span in the payload to be set
 				LicenseKeyToEvents[licenseKey] = append(LicenseKeyToEvents[licenseKey], SpanToEvent(s, msg.EntityName, msg.EntityId))
 			}
+			lock.Unlock()
 			// keep this from blocking all the time
 			timer := time.NewTimer(HarvestPeriod * time.Second)
 			<-timer.C
@@ -116,13 +120,17 @@ func main() {
 			numRequestsAwaiting := 0
 			comms := make(chan RequestResult)
 			// loop through the events bucketed by license key and kick the request off in parallel
+			lock.RLock()
 			for licenseKey, events := range LicenseKeyToEvents {
-				go SendEvents(licenseKey, events, comms)
+				go SendEvents(licenseKey, &events, comms)
+				delete(LicenseKeyToEvents, licenseKey)
 				// record the number of outstanding requests
 				numRequestsAwaiting++
 			}
+			lock.RUnlock()
 
 			// read off the return channel till all requests have come back
+			lock.Lock()
 			for ; numRequestsAwaiting != 0; numRequestsAwaiting-- {
 				result := <-comms
 				// if there was an error, don't remove the events from
@@ -130,12 +138,10 @@ func main() {
 
 				// TODO: extra error handling here? are there cases where we want to throw the events away anyway?
 				if result.Err != nil {
-					continue
+					LicenseKeyToEvents[result.LicenseKey] = append(LicenseKeyToEvents[result.LicenseKey], *result.Events...)
 				}
-
-				// delete the processed spans from the queue
-				delete(LicenseKeyToEvents, result.LicenseKey)
 			}
+			lock.Unlock()
 		}
 
 		log.Print("waiting")
