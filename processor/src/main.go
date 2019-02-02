@@ -86,7 +86,7 @@ func main() {
 	defer r.Close()
 
 	// used to break events out into payloads to send
-    LicenseKeyToEvents := make(map[string][]SpanEvent)
+	LicenseKeyToEvents := make(map[string][]SpanEvent)
 	lock := sync.RWMutex{}
 
 	var HarvestPeriod time.Duration = 10 // In seconds
