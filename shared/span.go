@@ -1,5 +1,10 @@
 package span
 
+import (
+	"reflect"
+	"strings"
+)
+
 type Span struct {
 	TraceId    string                 `json:"trace_id"`
 	SpanId     string                 `json:"span_id"`
@@ -18,13 +23,22 @@ type SpanMessage struct {
 }
 
 func (span Span) IsValid() (string, bool) {
-	// TODO: do this with reflection
 	if span.SpanId == "" {
 		return "SpanId is required", false
 	}
 
-	if span.TraceId == "" {
-		return "TraceId is missing", false
+	spanType := reflect.TypeOf(span)
+	numFields := spanType.NumField()
+	val := reflect.ValueOf(span)
+	for i := 0; i < numFields; i++ {
+		field := spanType.Field(i)
+		jTag, _ := field.Tag.Lookup("json")
+		if !strings.Contains(jTag, "omitempty") {
+			if !val.FieldByName(field.Name).IsValid() {
+				return jTag + " is missing from span " + span.SpanId, false
+			}
+		}
 	}
+
 	return "", true
 }
