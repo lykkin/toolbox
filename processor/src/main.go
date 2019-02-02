@@ -2,29 +2,31 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"time"
 
 	"shared"
 
-	"github.com/gocql/gocql"
+	"github.com/segmentio/kafka-go"
 )
 
 type SpanEvent struct {
-	TraceId    string            `json:"traceId"`
-	SpanId     string            `json:"guid"`
-	ParentId   string            `json:"parentId"`
-	Name       string            `json:"name"`
-	Timestamp  uint64            `json:"timestamp"`
-	Duration   float64           `json:"durationMs"`
-	Tags       map[string]string `json:"tags,omitempty"`
-	EntityName string            `json:"entityName"`
-	EntityId   string            `json:"entityId,omitempty"`
+	TraceId    string                 `json:"traceId"`
+	SpanId     string                 `json:"guid"`
+	ParentId   string                 `json:"parentId"`
+	Name       string                 `json:"name"`
+	Timestamp  uint64                 `json:"timestamp"`
+	Duration   float64                `json:"durationMs"`
+	Tags       map[string]interface{} `json:"tags,omitempty"`
+	EntityName string                 `json:"entityName"`
+	EntityId   string                 `json:"entityId,omitempty"`
 }
 
-func SpanToEvent(s span.Span) SpanEvent {
+func SpanToEvent(s span.Span, entityName string, entityId string) SpanEvent {
 	return SpanEvent{
 		TraceId:    s.TraceId,
 		SpanId:     s.SpanId,
@@ -33,8 +35,8 @@ func SpanToEvent(s span.Span) SpanEvent {
 		Timestamp:  uint64(s.StartTime),
 		Duration:   s.FinishTime - s.StartTime,
 		Tags:       s.Tags,
-		EntityName: s.EntityName,
-		EntityId:   s.EntityId,
+		EntityName: entityName,
+		EntityId:   entityId,
 	}
 }
 
@@ -72,47 +74,45 @@ func SendEvents(licenseKey string, events []SpanEvent, errChan chan RequestResul
 }
 
 func main() {
-	cluster := gocql.NewCluster("cassandra")
-	cluster.Keyspace = "span_collector"
-	cluster.Consistency = gocql.One
-	session, err := cluster.CreateSession()
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer session.Close()
-	var HarvestPeriod time.Duration = 10 // In seconds
-	for {
-		// used to break events out into payloads to send
-		LicenseKeyToEvents := make(map[string][]SpanEvent)
-		// used to track unique trace ids to delete
-		LicenseKeyToTraceIds := make(map[string]map[string]bool)
+	r := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:   []string{"kafka:9092"},
+		GroupID:   "span-consumers",
+		Topic:     "incomingSpans",
+		Partition: 0,
+		MaxBytes:  10e6, // 10MB
+	})
+	defer r.Close()
 
-		// grab all spans to process
-		iter := session.Query("SELECT * FROM span_collector.to_process;").Iter()
+	// used to break events out into payloads to send
+	LicenseKeyToEvents := make(map[string][]SpanEvent)
+
+	var HarvestPeriod time.Duration = 10 // In seconds
+	go func() {
 		for {
-			row := make(map[string]interface{})
-			if !iter.MapScan(row) {
+			m, err := r.ReadMessage(context.Background())
+			if err != nil {
+				fmt.Printf("Consumer error: %v (%v)\n", err, m)
+				log.Fatal("dying")
 				break
 			}
-
-			s := span.FromRow(row)
-			licenseKey := s.LicenseKey
-			// seed the trace id set for the license key if it doesn't exist
-			if _, ok := LicenseKeyToTraceIds[licenseKey]; !ok {
-				LicenseKeyToTraceIds[licenseKey] = make(map[string]bool)
+			fmt.Printf("message at offset %d: %s = %s\n", m.Offset, string(m.Key), string(m.Value))
+			var msg span.SpanMessage
+			json.Unmarshal(m.Value, &msg)
+			licenseKey := msg.LicenseKey
+			for _, s := range msg.Spans {
+				// record the span in the payload to be set
+				LicenseKeyToEvents[licenseKey] = append(LicenseKeyToEvents[licenseKey], SpanToEvent(s, msg.EntityName, msg.EntityId))
 			}
-			// set the trace id as seen
-			LicenseKeyToTraceIds[licenseKey][s.TraceId] = true
-			// record the span in the payload to be setn
-			LicenseKeyToEvents[licenseKey] = append(LicenseKeyToEvents[licenseKey], SpanToEvent(s))
+			// keep this from blocking all the time
+			timer := time.NewTimer(HarvestPeriod * time.Second)
+			<-timer.C
 		}
+	}()
 
-		if err := iter.Close(); err != nil {
-			log.Fatal(err)
-		}
-
+	for {
 		// only process if there are events to send
 		if len(LicenseKeyToEvents) > 0 {
+
 			numRequestsAwaiting := 0
 			comms := make(chan RequestResult)
 			// loop through the events bucketed by license key and kick the request off in parallel
@@ -122,8 +122,6 @@ func main() {
 				numRequestsAwaiting++
 			}
 
-			query := "BEGIN BATCH "
-			values := make([]interface{}, 0)
 			// read off the return channel till all requests have come back
 			for ; numRequestsAwaiting != 0; numRequestsAwaiting-- {
 				result := <-comms
@@ -136,22 +134,13 @@ func main() {
 				}
 
 				// delete the processed spans from the queue
-				licenseKey := result.LicenseKey
-				for traceId, _ := range LicenseKeyToTraceIds[licenseKey] {
-					query += "DELETE FROM span_collector.to_process WHERE trace_id=? AND license_key=?;"
-					values = append(values, traceId, licenseKey)
-				}
+				delete(LicenseKeyToEvents, result.LicenseKey)
 			}
-
-			query += "APPLY BATCH;"
-			log.Printf("EXECUTING QUERY: %s", query)
-			log.Printf("WITH VALUES: %s", values)
-			log.Printf("FROM DELETE: %s", session.Query(query, values...).Exec())
 		}
 
 		log.Print("waiting")
 		// wait some time for more spans to roll in
-		timer1 := time.NewTimer(HarvestPeriod * time.Second)
-		<-timer1.C
+		timer := time.NewTimer(HarvestPeriod * time.Second)
+		<-timer.C
 	}
 }

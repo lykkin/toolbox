@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -9,72 +10,74 @@ import (
 
 	"shared"
 
-	"github.com/gocql/gocql"
 	"github.com/gorilla/mux"
+	"github.com/segmentio/kafka-go"
 )
 
-func NewSpanCollector(session *gocql.Session) func(http.ResponseWriter, *http.Request) {
+func NewSpanCollector(p *kafka.Writer) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		queryParams := r.URL.Query()
+		licenseKeyParams, ok := queryParams["license_key"]
+		if !ok {
+			fmt.Fprint(w, "license_key query param is required")
+			return
+		}
+
+		licenseKey := licenseKeyParams[0]
+
+		entityNameParams, ok := queryParams["entity_name"]
+		if !ok {
+			fmt.Fprint(w, "entity_name query param is required")
+			return
+		}
+
+		entityName := entityNameParams[0]
 
 		incomingSpans := []span.Span{}
 		body, _ := ioutil.ReadAll(r.Body)
 		json.Unmarshal(body, &incomingSpans)
 
-		var values []interface{} = make([]interface{}, 0)
-
-		query := "BEGIN BATCH "
-		for _, span := range incomingSpans {
-			spanQuery, spanValues := span.GetInsertQueryAndValues(queryParams, []string{"span_collector.span", "span_collector.to_process"})
-
-			query += spanQuery
-			values = append(values, spanValues...)
-		}
-		query += "APPLY BATCH;"
-		log.Printf("The query is: %s", query)
-		log.Printf("The values are: %s", values)
-		log.Printf("The query params are %s", queryParams)
-		log.Printf("From insert: %s", session.Query(query, values...).Exec())
-	}
-}
-
-func NewSpanViewer(session *gocql.Session) func(http.ResponseWriter, *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		spans := make([]span.Span, 0)
-
-		iter := session.Query("SELECT * FROM span_collector.span;").Iter()
-		for {
-			row := make(map[string]interface{})
-			if !iter.MapScan(row) {
-				break
+		for _, s := range incomingSpans {
+			if msg, ok := s.IsValid(); !ok {
+				fmt.Fprintf(w, "Invalid span format: %s\n", msg)
+				return
 			}
-
-			spans = append(spans, span.FromRow(row))
+		}
+		spanMessage := span.SpanMessage{
+			EntityName: entityName,
+			LicenseKey: licenseKey,
+			Spans:      incomingSpans,
 		}
 
-		if err := iter.Close(); err != nil {
-			log.Fatal(err)
+		if entityId, ok := queryParams["entity_id"]; ok {
+			spanMessage.EntityId = entityId[0]
 		}
 
-		body, _ := json.Marshal(spans)
-		log.Printf("Sending %s", body)
-		fmt.Fprintf(w, "%s\n", body)
+		msg, err := json.Marshal(spanMessage)
+		if err != nil {
+			fmt.Fprintf(w, "Serialization error\n")
+			return
+		}
+
+		p.WriteMessages(context.Background(),
+			kafka.Message{
+				Key:   []byte("msg"),
+				Value: []byte(msg),
+			},
+		)
 	}
 }
 
 func main() {
 	r := mux.NewRouter()
-	cluster := gocql.NewCluster("cassandra")
-	cluster.Keyspace = "span_collector"
-	cluster.Consistency = gocql.One
-	session, err := cluster.CreateSession()
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer session.Close()
-	r.HandleFunc("/", NewSpanCollector(session)).Methods("POST")
-	r.HandleFunc("/", NewSpanViewer(session)).Methods("GET")
+	w := kafka.NewWriter(kafka.WriterConfig{
+		Brokers:  []string{"kafka:9092"},
+		Topic:    "incomingSpans",
+		Balancer: &kafka.LeastBytes{},
+	})
+	defer w.Close()
+	r.HandleFunc("/", NewSpanCollector(w)).Methods("POST")
 	http.Handle("/", r)
 	log.Print("Listening on port 12345!")
 	log.Fatal(http.ListenAndServe(":12345", nil))

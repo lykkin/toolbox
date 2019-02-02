@@ -9,9 +9,9 @@ services:
             - "12345:12345"
         restart: on-failure
         depends_on:
-            - cassandra
+            - kafka
         links:
-            - cassandra
+            - kafka
 
     processor:
         build:
@@ -19,9 +19,9 @@ services:
             dockerfile: processor/Dockerfile
         restart: on-failure
         depends_on:
-            - cassandra
+            - kafka
         links:
-            - cassandra
+            - kafka
 
-    cassandra:
-        build: ./db
+    kafka:
+        image: spotify/kafka
