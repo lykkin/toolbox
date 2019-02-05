@@ -35,7 +35,6 @@ func main() {
 	})
 	defer r.Close()
 
-	// used to break events out into payloads to send
 	Metrics := make(MetricsMap)
     // since the map is shared between consumer and producer goroutines,
     // we have to lock it.
@@ -66,19 +65,17 @@ func main() {
 	}()
 
 	for {
-		// only process if there are events to send
 		if len(Metrics) > 0 {
-			// loop through the events bucketed by license key and kick the request off in parallel
 			lock.RLock()
 			for _, metric := range Metrics {
                 log.Print(metric)
 			}
 			lock.RUnlock()
 
-			// read off the return channel till all requests have come back
 			lock.Lock()
             // send data
-            // remerge in the case of a failure?
+            // remerge in the case of a failure
+            Metrics = make(MetricsMap)
 			lock.Unlock()
 		}
 
