@@ -16,6 +16,7 @@ import (
 
 func NewSpanCollector(p *kafka.Writer) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
+        // TODO: set some proper response codes
 
 		queryParams := r.URL.Query()
 		licenseKeyParams, ok := queryParams["license_key"]
@@ -56,7 +57,7 @@ func NewSpanCollector(p *kafka.Writer) func(http.ResponseWriter, *http.Request) 
 
 		msg, err := json.Marshal(spanMessage)
 		if err != nil {
-			fmt.Fprintf(w, "Serialization error\n")
+            fmt.Fprintf(w, "Serialization error: %s\n", err)
 			return
 		}
 
@@ -66,19 +67,22 @@ func NewSpanCollector(p *kafka.Writer) func(http.ResponseWriter, *http.Request) 
 				Value: []byte(msg),
 			},
 		)
+        // TODO: respond to the request
 	}
 }
 
 func main() {
-	r := mux.NewRouter()
 	w := kafka.NewWriter(kafka.WriterConfig{
 		Brokers:  []string{"kafka:9092"},
 		Topic:    "incomingSpans",
 		Balancer: &kafka.LeastBytes{},
 	})
 	defer w.Close()
+
+	r := mux.NewRouter()
 	r.HandleFunc("/", NewSpanCollector(w)).Methods("POST")
 	http.Handle("/", r)
+
 	log.Print("Listening on port 12345!")
 	log.Fatal(http.ListenAndServe(":12345", nil))
 }

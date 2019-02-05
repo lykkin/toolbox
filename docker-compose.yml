@@ -13,10 +13,20 @@ services:
         links:
             - kafka
 
-    processor:
+    span-processor:
         build:
             context: .
-            dockerfile: processor/Dockerfile
+            dockerfile: span-processor/Dockerfile
+        restart: on-failure
+        depends_on:
+            - kafka
+        links:
+            - kafka
+
+    metric-processor:
+        build:
+            context: .
+            dockerfile: metric-processor/Dockerfile
         restart: on-failure
         depends_on:
             - kafka

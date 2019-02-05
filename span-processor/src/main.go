@@ -87,9 +87,12 @@ func main() {
 
 	// used to break events out into payloads to send
 	LicenseKeyToEvents := make(map[string][]SpanEvent)
+    // since the map is shared between consumer and producer goroutines,
+    // we have to lock it.
 	lock := sync.RWMutex{}
 
 	var HarvestPeriod time.Duration = 10 // In seconds
+    // kick off a gorouting responsible for reading messages in from kafka
 	go func() {
 		for {
 			m, err := r.ReadMessage(context.Background())
