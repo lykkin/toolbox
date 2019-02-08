@@ -57,13 +57,13 @@ func (m *Metric) Add(duration float64) {
 	}
 }
 
-type MetricsList []*Metric
+type MetricsMap map[string]*[]*Metric
 
 type RequestResult struct {
 	Err error
 }
 
-func SendMetrics(insightsKey string, metrics *MetricsList, startTime uint64, interval uint64, resChan chan RequestResult) {
+func SendMetrics(insightsKey string, metrics *[]*Metric, startTime uint64, interval uint64, resChan chan RequestResult) {
 	payload := map[string]interface{}{
 		"version": "0.3.0",
 		"metric_buckets": []map[string]interface{}{map[string]interface{}{
@@ -94,7 +94,7 @@ func SendMetrics(insightsKey string, metrics *MetricsList, startTime uint64, int
 	defer res.Body.Close()
 	bodyBytes, err2 := ioutil.ReadAll(res.Body)
 	bodyString := string(bodyBytes)
-	log.Print(bodyString, err2)
+	log.Print("ASDF", bodyString, err2, res)
 
 	// TODO: parse response and propagate it to the main goroutine
 	resChan <- RequestResult{nil}
@@ -118,7 +118,7 @@ func main() {
 	tagWhitelist := make([]string, 0)
 	json.Unmarshal(whitelistJSON, &tagWhitelist)
 
-	InsightsKeyToMetrics := make(map[string]*MetricsList)
+	InsightsKeyToMetrics := make(map[string]MetricsMap)
 	// since the map is shared between consumer and producer goroutines,
 	// we have to lock it.
 	lock := sync.RWMutex{}
@@ -138,13 +138,18 @@ func main() {
 			var msg span.SpanMessage
 			json.Unmarshal(m.Value, &msg)
 			if msg.InsightsKey != "" {
-				Metrics, ok := InsightsKeyToMetrics[msg.InsightsKey]
+				NameToMetrics, ok := InsightsKeyToMetrics[msg.InsightsKey]
 				if !ok {
-					InsightsKeyToMetrics[msg.InsightsKey] = new(MetricsList)
-					Metrics, ok = InsightsKeyToMetrics[msg.InsightsKey]
+					InsightsKeyToMetrics[msg.InsightsKey] = make(MetricsMap)
+					NameToMetrics = InsightsKeyToMetrics[msg.InsightsKey]
 				}
 			SPAN_LOOP:
 				for _, s := range msg.Spans {
+					Metrics, ok := NameToMetrics[s.Name]
+					if !ok {
+						NameToMetrics[s.Name] = new([]*Metric)
+						Metrics = NameToMetrics[s.Name]
+					}
 					// collect spans into metrics bucket
 					attrs := make(map[string]interface{})
 					for _, tagName := range tagWhitelist {
@@ -153,7 +158,6 @@ func main() {
 						}
 					}
 					duration := s.FinishTime - s.StartTime
-					// break this out as a list by names for SPEED
 					for _, m := range *Metrics {
 						if m.Recognizes(s.Name, attrs) {
 							lock.Lock()
@@ -185,7 +189,11 @@ func main() {
 			// loop through the events bucketed by license key and kick the request off in parallel
 			lock.RLock()
 			for insightsKey, metrics := range InsightsKeyToMetrics {
-				go SendMetrics(insightsKey, metrics, startTime, interval, comms)
+				metricsToSend := make([]*Metric, 0)
+				for _, ms := range metrics {
+					metricsToSend = append(metricsToSend, *ms...)
+				}
+				go SendMetrics(insightsKey, &metricsToSend, startTime, interval, comms)
 				delete(InsightsKeyToMetrics, insightsKey)
 				// record the number of outstanding requests
 				numRequestsAwaiting++
