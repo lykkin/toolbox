@@ -19,11 +19,14 @@ you should be safe to `POST` json to `localhost:12345`
 
 ### Query parameters
 
-|     Param     |  Type  | Description |
-|---------------|--------|-------------|
-| `entity_name` | string | Name of the entity the trace was produced from.  |
-| `license_key` | string | License key to associate the trace data with. |
-|  `entity_id`  | string | [*Optional*] ID of the entity the trace was produced from.  |
+Note: one of either `license_key` or `insights_key` (or both!) are required.
+
+|     Param      |  Type  | Description |
+|----------------|--------|-------------|
+| `entity_name`  | string | Name of the entity the trace was produced from.  |
+| `license_key`  | string | [*Optional*] If specified, the collector will send span data to New Relic. |
+| `insights_key` | string | [*Optional*] If specified, the collector will send metric data to New Relic. |
+|  `entity_id`   | string | [*Optional*] ID of the entity the trace was produced from.  |
 
 ### Payload
 The payload should be JSON with the following fields defined:

@@ -1,0 +1,21 @@
+[
+    "component",
+    "db.instance",
+    "db.statement",
+    "db.type",
+    "db.user",
+    "error",
+    "http.method",
+    "http.status_code",
+    "http.url",
+    "message_bus.destination",
+    "peer.address",
+    "peer.hostname",
+    "peer.ipv4",
+    "peer.ipv6",
+    "peer.port",
+    "peer.service",
+    "sampling.priority",
+    "span.kind"
+]
+

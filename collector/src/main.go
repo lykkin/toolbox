@@ -16,16 +16,16 @@ import (
 
 func NewSpanCollector(p *kafka.Writer) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-        // TODO: set some proper response codes
+		// TODO: set some proper response codes
 
 		queryParams := r.URL.Query()
-		licenseKeyParams, ok := queryParams["license_key"]
-		if !ok {
-			fmt.Fprint(w, "license_key query param is required")
+		licenseKeyParams, licenseKeyFound := queryParams["license_key"]
+		insightsKeyParams, insightsKeyFound := queryParams["insights_key"]
+
+		if !licenseKeyFound && !insightsKeyFound {
+			fmt.Fprint(w, "one (or both) of license_key or insights_key query params are required")
 			return
 		}
-
-		licenseKey := licenseKeyParams[0]
 
 		entityNameParams, ok := queryParams["entity_name"]
 		if !ok {
@@ -47,8 +47,15 @@ func NewSpanCollector(p *kafka.Writer) func(http.ResponseWriter, *http.Request) 
 		}
 		spanMessage := span.SpanMessage{
 			EntityName: entityName,
-			LicenseKey: licenseKey,
 			Spans:      incomingSpans,
+		}
+
+		if licenseKeyFound {
+			spanMessage.LicenseKey = licenseKeyParams[0]
+		}
+
+		if insightsKeyFound {
+			spanMessage.InsightsKey = insightsKeyParams[0]
 		}
 
 		if entityId, ok := queryParams["entity_id"]; ok {
@@ -57,17 +64,18 @@ func NewSpanCollector(p *kafka.Writer) func(http.ResponseWriter, *http.Request) 
 
 		msg, err := json.Marshal(spanMessage)
 		if err != nil {
-            fmt.Fprintf(w, "Serialization error: %s\n", err)
+			fmt.Fprintf(w, "Serialization error: %s\n", err)
 			return
 		}
 
+		log.Print("writing ", string(msg))
 		p.WriteMessages(context.Background(),
 			kafka.Message{
 				Key:   []byte("msg"),
 				Value: []byte(msg),
 			},
 		)
-        // TODO: respond to the request
+		// TODO: respond to the request
 	}
 }
 

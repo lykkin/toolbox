@@ -54,6 +54,7 @@ func SendEvents(licenseKey string, events *[]SpanEvent, errChan chan RequestResu
 		errChan <- RequestResult{err, "", events}
 		return
 	}
+	log.Print("sending", string(body))
 
 	req, err := http.NewRequest("POST", "https://staging-collector.newrelic.com/agent_listener/invoke_raw_method", bytes.NewBuffer(body))
 	if err != nil {
@@ -87,12 +88,12 @@ func main() {
 
 	// used to break events out into payloads to send
 	LicenseKeyToEvents := make(map[string][]SpanEvent)
-    // since the map is shared between consumer and producer goroutines,
-    // we have to lock it.
+	// since the map is shared between consumer and producer goroutines,
+	// we have to lock it.
 	lock := sync.RWMutex{}
 
 	var HarvestPeriod time.Duration = 10 // In seconds
-    // kick off a gorouting responsible for reading messages in from kafka
+	// kick off a gorouting responsible for reading messages in from kafka
 	go func() {
 		for {
 			m, err := r.ReadMessage(context.Background())
@@ -103,13 +104,14 @@ func main() {
 			fmt.Printf("message at offset %d: %s = %s\n", m.Offset, string(m.Key), string(m.Value))
 			var msg span.SpanMessage
 			json.Unmarshal(m.Value, &msg)
-			licenseKey := msg.LicenseKey
-			lock.Lock()
-			for _, s := range msg.Spans {
-				// record the span in the payload to be set
-				LicenseKeyToEvents[licenseKey] = append(LicenseKeyToEvents[licenseKey], SpanToEvent(s, msg.EntityName, msg.EntityId))
+			if licenseKey := msg.LicenseKey; licenseKey != "" {
+				lock.Lock()
+				for _, s := range msg.Spans {
+					// record the span in the payload to be set
+					LicenseKeyToEvents[licenseKey] = append(LicenseKeyToEvents[licenseKey], SpanToEvent(s, msg.EntityName, msg.EntityId))
+				}
+				lock.Unlock()
 			}
-			lock.Unlock()
 			// keep this from blocking all the time
 			timer := time.NewTimer(HarvestPeriod * time.Second)
 			<-timer.C

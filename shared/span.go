@@ -16,15 +16,16 @@ type Span struct {
 }
 
 type SpanMessage struct {
-	LicenseKey string `json:"license_key"`
-	EntityName string `json:"entity_name"`
-	EntityId   string `json:"entity_id,omitempty"`
-	Spans      []Span `json:"spans"`
+	LicenseKey  string `json:"license_key,omitempty"`
+	InsightsKey string `json:"insights_key,omitempty"`
+	EntityName  string `json:"entity_name"`
+	EntityId    string `json:"entity_id,omitempty"`
+	Spans       []Span `json:"spans"`
 }
 
 func (span Span) IsValid() (string, bool) {
 	if span.SpanId == "" {
-		return "SpanId is required", false
+		return "span_id is required", false
 	}
 
 	spanType := reflect.TypeOf(span)
