@@ -13,5 +13,5 @@ FROM alpine
 RUN apk update && apk add ca-certificates
 WORKDIR /root/
 COPY --from=builder /go/bin/metric-processor /root/
-COPY ./metric-processor/src/whitelist.json /conf/
+COPY ./metric-processor/conf /conf
 CMD ["./metric-processor"]

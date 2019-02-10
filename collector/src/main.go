@@ -35,7 +35,7 @@ func NewSpanCollector(p *kafka.Writer) func(http.ResponseWriter, *http.Request) 
 
 		entityName := entityNameParams[0]
 
-		incomingSpans := []span.Span{}
+		incomingSpans := []shared.Span{}
 		body, _ := ioutil.ReadAll(r.Body)
 		json.Unmarshal(body, &incomingSpans)
 
@@ -45,7 +45,7 @@ func NewSpanCollector(p *kafka.Writer) func(http.ResponseWriter, *http.Request) 
 				return
 			}
 		}
-		spanMessage := span.SpanMessage{
+		spanMessage := shared.SpanMessage{
 			EntityName: entityName,
 			Spans:      incomingSpans,
 		}

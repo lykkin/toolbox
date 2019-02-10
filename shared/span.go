@@ -1,4 +1,4 @@
-package span
+package shared
 
 import (
 	"reflect"
