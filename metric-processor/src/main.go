@@ -38,6 +38,7 @@ func SendMetrics(insightsKey string, metrics *MetricList, startTime uint64, inte
 		resChan <- response
 		return
 	}
+	log.Print(string(body))
 	//// set query params and headers
 	req.Header.Set("X-Insert-Key", insightsKey)
 	req.Header.Set("Content-Type", "application/json")
@@ -47,7 +48,7 @@ func SendMetrics(insightsKey string, metrics *MetricList, startTime uint64, inte
 	defer res.Body.Close()
 	bodyBytes, err2 := ioutil.ReadAll(res.Body)
 	bodyString := string(bodyBytes)
-	log.Print(err2, bodyString)
+	log.Print(err2, res, bodyString)
 
 	// TODO: parse response and propagate it to the main goroutine
 	resChan <- response
@@ -55,8 +56,14 @@ func SendMetrics(insightsKey string, metrics *MetricList, startTime uint64, inte
 
 func consume(msgChan chan shared.SpanMessage, lock *sync.RWMutex, InsightsKeyToMetrics *map[string]MetricsMap, tagWhitelist *[]string) {
 	for msg := range msgChan {
-        log.Print("got something")
+		log.Print("got something")
 		if msg.InsightsKey != "" {
+			// lock for the whole consume loop, since we will be making
+			// new metric buckets, and we don't want them to get dropped
+			// on accident. this is probably awful for performance, and
+			// should be reworked.
+			// TODO: lockless?
+			lock.Lock()
 			NameToMetrics, ok := (*InsightsKeyToMetrics)[msg.InsightsKey]
 			if !ok {
 				(*InsightsKeyToMetrics)[msg.InsightsKey] = make(MetricsMap)
@@ -79,27 +86,29 @@ func consume(msgChan chan shared.SpanMessage, lock *sync.RWMutex, InsightsKeyToM
 				duration := s.FinishTime - s.StartTime
 				for _, m := range *Metrics {
 					if m.Recognizes(attrs) {
-						lock.Lock()
 						m.Add(duration)
 						log.Print(m)
-						lock.Unlock()
 						continue SPAN_LOOP
 					}
 				}
-				var metric Metric
-				metric.Type = "summary"
-				metric.Name = s.Name
-				metric.Attributes = attrs
+				metric := Metric{
+					Type:       "summary",
+					Name:       s.Name,
+					Attributes: attrs,
+				}
 				metric.Add(duration)
-				lock.Lock()
 				*Metrics = append(*Metrics, &metric)
-				lock.Unlock()
 			}
+			lock.Unlock()
 		} else {
 			log.Print("no insights key")
 		}
 	}
 	log.Fatal("kafka message channel closed unexpectedly!")
+}
+
+func getTimestampMs() uint64 {
+	return uint64(time.Now().UnixNano() / int64(time.Millisecond))
 }
 
 func main() {
@@ -123,18 +132,17 @@ func main() {
 
 	startTime := uint64(time.Now().UnixNano() / int64(time.Millisecond))
 
-	var HarvestPeriod time.Duration = 10                               // In seconds
-	interval := uint64(HarvestPeriod * time.Second / time.Millisecond) // In milliseconds
 	// kick off a gorouting responsible for reading messages in from kafka
 	go consume(msgChan, &lock, &InsightsKeyToMetrics, &tagWhitelist)
 
-    var timer *time.Timer
+	var timer *time.Timer
 	for {
 		if len(InsightsKeyToMetrics) > 0 {
 			resChan := make(chan *RequestResult)
 			// loop through the events bucketed by license key and kick the request off in parallel
 			lock.Lock()
 			numRequestsAwaiting := len(InsightsKeyToMetrics)
+			interval := getTimestampMs() - startTime // In milliseconds
 			for insightsKey, metrics := range InsightsKeyToMetrics {
 				metricsToSend := make(MetricList, 0)
 				for _, ms := range metrics {
@@ -159,15 +167,15 @@ func main() {
 					lock.Unlock()
 				}
 			}
-            log.Print("waiting 10 seconds to send again")
-            timer = time.NewTimer(10 * time.Second)
+			log.Print("waiting 10 seconds to send again")
+			timer = time.NewTimer(10 * time.Second)
+			startTime = getTimestampMs()
 		} else {
-            log.Print("no input found, waiting 3 seconds to check again")
-            timer = time.NewTimer(3 * time.Second)
-        }
+			log.Print("no input found, waiting 3 seconds to check again")
+			timer = time.NewTimer(3 * time.Second)
+		}
 
 		// wait some time for more spans to roll in
 		<-timer.C
-		startTime = uint64(time.Now().UnixNano() / int64(time.Millisecond))
 	}
 }
