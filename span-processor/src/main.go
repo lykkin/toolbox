@@ -21,7 +21,7 @@ func SendEvents(licenseKey string, events SpanList, resChan chan *RequestResult)
 		resChan <- response
 		return
 	}
-	log.Print("sending", string(body))
+	log.Printf("sending %d events for license key %s", len(*events), licenseKey)
 
 	req, err := http.NewRequest("POST", "https://staging-collector.newrelic.com/agent_listener/invoke_raw_method", bytes.NewBuffer(body))
 	if err != nil {

@@ -38,7 +38,6 @@ func SendMetrics(insightsKey string, metrics *MetricList, startTime uint64, inte
 		resChan <- response
 		return
 	}
-	log.Print(string(body))
 	//// set query params and headers
 	req.Header.Set("X-Insert-Key", insightsKey)
 	req.Header.Set("Content-Type", "application/json")
@@ -46,9 +45,9 @@ func SendMetrics(insightsKey string, metrics *MetricList, startTime uint64, inte
 	client := &http.Client{}
 	res, err := client.Do(req)
 	defer res.Body.Close()
-	bodyBytes, err2 := ioutil.ReadAll(res.Body)
-	bodyString := string(bodyBytes)
-	log.Print(err2, res, bodyString)
+	//bodyBytes, err2 := ioutil.ReadAll(res.Body)
+	//bodyString := string(bodyBytes)
+	//log.Print(err2, res, bodyString)
 
 	// TODO: parse response and propagate it to the main goroutine
 	resChan <- response
@@ -56,7 +55,6 @@ func SendMetrics(insightsKey string, metrics *MetricList, startTime uint64, inte
 
 func consume(msgChan chan shared.SpanMessage, lock *sync.RWMutex, InsightsKeyToMetrics *map[string]MetricsMap, tagWhitelist *[]string) {
 	for msg := range msgChan {
-		log.Print("got something")
 		if msg.InsightsKey != "" {
 			// lock for the whole consume loop, since we will be making
 			// new metric buckets, and we don't want them to get dropped
@@ -87,7 +85,7 @@ func consume(msgChan chan shared.SpanMessage, lock *sync.RWMutex, InsightsKeyToM
 				for _, m := range *Metrics {
 					if m.Recognizes(attrs) {
 						m.Add(duration)
-						log.Print(m)
+						//log.Print(m)
 						continue SPAN_LOOP
 					}
 				}
@@ -148,6 +146,7 @@ func main() {
 				for _, ms := range metrics {
 					metricsToSend = append(metricsToSend, *ms...)
 				}
+				log.Printf("sending %d metric buckets under key %s", len(metricsToSend), insightsKey)
 				go SendMetrics(insightsKey, &metricsToSend, startTime, interval, resChan)
 				delete(InsightsKeyToMetrics, insightsKey)
 				// record the number of outstanding requests

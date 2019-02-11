@@ -68,7 +68,7 @@ func NewSpanCollector(p *kafka.Writer) func(http.ResponseWriter, *http.Request) 
 			return
 		}
 
-		log.Print("writing ", string(msg))
+		//log.Print("writing ", string(msg))
 		p.WriteMessages(context.Background(),
 			kafka.Message{
 				Key:   []byte("msg"),

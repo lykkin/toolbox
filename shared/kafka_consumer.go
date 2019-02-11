@@ -34,7 +34,7 @@ func (k *SpanMessageConsumer) Start(msgChan chan SpanMessage) {
 				close(msgChan)
 				log.Fatal("dying")
 			}
-			fmt.Printf("message at offset %d: %s = %s\n", m.Offset, string(m.Key), string(m.Value))
+			//fmt.Printf("message at offset %d: %s = %s\n", m.Offset, string(m.Key), string(m.Value))
 			var msg SpanMessage
 			json.Unmarshal(m.Value, &msg)
 			msgChan <- msg
