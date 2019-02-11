@@ -11,6 +11,7 @@ import (
 	"shared"
 
 	"github.com/gorilla/mux"
+	"github.com/satori/go.uuid"
 	"github.com/segmentio/kafka-go"
 )
 
@@ -45,8 +46,14 @@ func NewSpanCollector(p *kafka.Writer) func(http.ResponseWriter, *http.Request) 
 				return
 			}
 		}
+		messageId, err := uuid.NewV4()
+		if err != nil {
+			// send an error message
+		}
+
 		spanMessage := shared.SpanMessage{
 			EntityName: entityName,
+			MessageId:  messageId,
 			Spans:      incomingSpans,
 		}
 

@@ -23,6 +23,18 @@ services:
         links:
             - kafka
 
+    error-processor:
+        build:
+            context: .
+            dockerfile: error-processor/Dockerfile
+        restart: on-failure
+        depends_on:
+            - cassandra
+            - kafka
+        links:
+            - cassandra
+            - kafka
+
     metric-processor:
         build:
             context: .
