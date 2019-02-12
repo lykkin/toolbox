@@ -5,9 +5,9 @@ import (
 	"reflect"
 )
 
-func ParseRow(dest *interface{}, row map[string]interface{}) error {
+func ParseRow(dest interface{}, row map[string]interface{}) (error, interface{}) {
 	destType := reflect.TypeOf(dest)
-	destVal := reflect.ValueOf(dest).Elem()
+    resVal := reflect.New(destType).Elem()
 	numFields := destType.NumField()
 	for i := 0; i < numFields; i++ {
 		field := destType.Field(i)
@@ -17,12 +17,12 @@ func ParseRow(dest *interface{}, row map[string]interface{}) error {
 		}
 		cassVal := reflect.ValueOf(row[cTag])
 		if cassVal.IsValid() {
-			destVal.FieldByName(field.Name).Set(cassVal)
+			resVal.FieldByName(field.Name).Set(cassVal.Convert(field.Type))
 		} else {
-			return errors.New("Expected a value to be present for " + cTag + " in cassandra row")
+			return errors.New("Expected a value to be present for " + cTag + " in cassandra row"), reflect.New(destType).Elem().Interface()
 		}
 	}
-	return nil
+    return nil, resVal.Interface()
 }
 
 func GetKeysAndValues(source interface{}) (*[]string, *[]interface{}) {
