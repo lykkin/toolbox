@@ -33,7 +33,9 @@ func (span Span) IsValid() (string, bool) {
 	val := reflect.ValueOf(span)
 	for i := 0; i < numFields; i++ {
 		field := spanType.Field(i)
+		// TODO: check if this is ok
 		jTag, _ := field.Tag.Lookup("json")
+
 		if !strings.Contains(jTag, "omitempty") {
 			if !val.FieldByName(field.Name).IsValid() {
 				return jTag + " is missing from span " + span.SpanId, false
