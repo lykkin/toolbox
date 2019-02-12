@@ -7,7 +7,7 @@ import (
 
 func ParseRow(dest interface{}, row map[string]interface{}) (error, interface{}) {
 	destType := reflect.TypeOf(dest)
-    resVal := reflect.New(destType).Elem()
+	resVal := reflect.New(destType).Elem()
 	numFields := destType.NumField()
 	for i := 0; i < numFields; i++ {
 		field := destType.Field(i)
@@ -22,7 +22,7 @@ func ParseRow(dest interface{}, row map[string]interface{}) (error, interface{})
 			return errors.New("Expected a value to be present for " + cTag + " in cassandra row"), reflect.New(destType).Elem().Interface()
 		}
 	}
-    return nil, resVal.Interface()
+	return nil, resVal.Interface()
 }
 
 func GetKeysAndValues(source interface{}) (*[]string, *[]interface{}) {
