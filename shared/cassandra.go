@@ -34,11 +34,13 @@ func GetKeysAndValues(source interface{}) (*[]string, *[]interface{}) {
 	for i := 0; i < numFields; i++ {
 		field := srcType.Field(i)
 		cTag, ok := field.Tag.Lookup("cassandra")
-		if !ok {
+		bos := srcVal.FieldByName(field.Name)
+		if !ok || !bos.IsValid() {
 			continue
 		}
+
 		fields = append(fields, cTag)
-		values = append(values, srcVal.FieldByName(field.Name).Interface())
+		values = append(values, bos.Interface())
 	}
 	return &fields, &values
 }

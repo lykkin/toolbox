@@ -33,5 +33,19 @@ services:
         links:
             - kafka
 
+    span-recorder:
+        build:
+            context: .
+            dockerfile: span-recorder/Dockerfile
+        restart: on-failure
+        depends_on:
+            - kafka
+        links:
+            - kafka
+            - cassandra
+
     kafka:
         image: spotify/kafka
+
+    cassandra:
+        image: cassandra
