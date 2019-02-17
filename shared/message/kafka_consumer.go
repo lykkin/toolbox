@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 
+	st "shared/types"
+
 	"github.com/segmentio/kafka-go"
 )
 
@@ -25,7 +27,7 @@ func NewSpanMessageConsumer(consumerGroup string) *SpanMessageConsumer {
 	}
 }
 
-func (k *SpanMessageConsumer) Start(msgChan chan SpanMessage) {
+func (k *SpanMessageConsumer) Start(msgChan chan st.SpanMessage) {
 	go func() {
 		for {
 			m, err := k.reader.ReadMessage(context.Background())
@@ -35,7 +37,7 @@ func (k *SpanMessageConsumer) Start(msgChan chan SpanMessage) {
 				log.Fatal("dying")
 			}
 			//fmt.Printf("message at offset %d: %s = %s\n", m.Offset, string(m.Key), string(m.Value))
-			var msg SpanMessage
+			var msg st.SpanMessage
 			json.Unmarshal(m.Value, &msg)
 			msgChan <- msg
 		}

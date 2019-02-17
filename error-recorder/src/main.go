@@ -8,12 +8,13 @@ import (
 	"strings"
 	"time"
 
-	"shared"
+	sdb "shared/db"
+	st "shared/types"
 
 	"github.com/segmentio/kafka-go"
 )
 
-func startReader(msgChan chan shared.ErrorMessage) error {
+func startReader(msgChan chan st.ErrorMessage) error {
 	r := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:   []string{"kafka:9092"},
 		GroupID:   "error-consumers",
@@ -33,7 +34,7 @@ func startReader(msgChan chan shared.ErrorMessage) error {
 				log.Fatal("dying")
 			}
 			//fmt.Printf("message at offset %d: %s = %s\n", m.Offset, string(m.Key), string(m.Value))
-			var msg shared.ErrorMessage
+			var msg st.ErrorMessage
 			json.Unmarshal(m.Value, &msg)
 			msgChan <- msg
 		}
@@ -51,15 +52,15 @@ func main() {
 		"component": "text",
 		"event":     "text",
 	}
-	session, err := shared.SetupCassandraSchema(KEYSPACE, TABLE_NAME, tableSchema, "timestamp")
+	session, err := sdb.SetupCassandraSchema(KEYSPACE, TABLE_NAME, tableSchema, "timestamp")
 	for err != nil {
 		log.Print("ran into an error while setting up cassandra, waiting 5 seconds: ", err)
 		time.Sleep(5 * time.Second)
-		session, err = shared.SetupCassandraSchema(KEYSPACE, TABLE_NAME, tableSchema, "timestamp")
+		session, err = sdb.SetupCassandraSchema(KEYSPACE, TABLE_NAME, tableSchema, "component, timestamp")
 	}
 	defer session.Close()
 
-	msgChan := make(chan shared.ErrorMessage)
+	msgChan := make(chan st.ErrorMessage)
 	startReader(msgChan)
 
 	placeholderValues := []string{"?"}
@@ -67,9 +68,9 @@ func main() {
 		query := "BEGIN BATCH "
 		values := make([]interface{}, 0)
 		for _, e := range msg.Errors {
-			fields, errorValues := shared.GetKeysAndValues(e)
+			fields, errorValues := sdb.GetKeysAndValues(e)
 			values = append(values, *errorValues...)
-			query += "INSERT into " + TABLE_NAME + " (" + strings.Join(*fields, ",") + ") VALUES (" + shared.MakePlaceholderString(&placeholderValues, len(*fields)) + ");"
+			query += "INSERT into " + TABLE_NAME + " (" + strings.Join(*fields, ",") + ") VALUES (" + sdb.MakePlaceholderString(&placeholderValues, len(*fields)) + ");"
 		}
 		query += "APPLY BATCH;"
 		err := session.Query(query, values...).Exec()

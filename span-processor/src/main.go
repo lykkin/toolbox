@@ -8,7 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"shared"
+	sm "shared/message"
+	st "shared/types"
 )
 
 func SendEvents(licenseKey string, events SpanList, resChan chan *RequestResult) {
@@ -48,7 +49,7 @@ func SendEvents(licenseKey string, events SpanList, resChan chan *RequestResult)
 	resChan <- response
 }
 
-func consume(msgChan chan shared.SpanMessage, lock *sync.RWMutex, LicenseKeyToEvents *map[string]SpanList) {
+func consume(msgChan chan st.SpanMessage, lock *sync.RWMutex, LicenseKeyToEvents *map[string]SpanList) {
 	for msg := range msgChan {
 		if licenseKey := msg.LicenseKey; licenseKey != "" {
 			lock.Lock()
@@ -68,8 +69,8 @@ func consume(msgChan chan shared.SpanMessage, lock *sync.RWMutex, LicenseKeyToEv
 }
 
 func main() {
-	reader := shared.NewSpanMessageConsumer("span-consumers")
-	msgChan := make(chan shared.SpanMessage)
+	reader := sm.NewSpanMessageConsumer("span-consumers")
+	msgChan := make(chan st.SpanMessage)
 	reader.Start(msgChan)
 
 	// since the map is shared between consumer and producer goroutines,

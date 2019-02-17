@@ -8,7 +8,7 @@ import (
 	"log"
 	"net/http"
 
-	"shared"
+	st "shared/types"
 
 	"github.com/gorilla/mux"
 	"github.com/satori/go.uuid"
@@ -36,7 +36,7 @@ func NewSpanCollector(p *kafka.Writer) func(http.ResponseWriter, *http.Request) 
 
 		entityName := entityNameParams[0]
 
-		incomingSpans := []shared.Span{}
+		incomingSpans := []st.Span{}
 		body, _ := ioutil.ReadAll(r.Body)
 		json.Unmarshal(body, &incomingSpans)
 
@@ -51,7 +51,7 @@ func NewSpanCollector(p *kafka.Writer) func(http.ResponseWriter, *http.Request) 
 			// send an error message
 		}
 
-		spanMessage := shared.SpanMessage{
+		spanMessage := st.SpanMessage{
 			EntityName: entityName,
 			MessageId:  messageId.String(),
 			Spans:      incomingSpans,

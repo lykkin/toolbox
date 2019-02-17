@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 
+	st "shared/types"
+
 	"github.com/segmentio/kafka-go"
 )
 
@@ -21,7 +23,7 @@ func NewErrorMessageProducer() *ErrorMessageProducer {
 	}
 }
 
-func (k *ErrorMessageProducer) Write(errorMsg ErrorMessage) error {
+func (k *ErrorMessageProducer) Write(errorMsg st.ErrorMessage) error {
 	msg, err := json.Marshal(errorMsg)
 	if err != nil {
 		return err
