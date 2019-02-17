@@ -23,10 +23,10 @@ services:
         links:
             - kafka
 
-    error-processor:
+    error-recorder:
         build:
             context: .
-            dockerfile: error-processor/Dockerfile
+            dockerfile: error-recorder/Dockerfile
         restart: on-failure
         depends_on:
             - cassandra

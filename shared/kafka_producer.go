@@ -14,9 +14,9 @@ type ErrorMessageProducer struct {
 func NewErrorMessageProducer() *ErrorMessageProducer {
 	return &ErrorMessageProducer{
 		writer: kafka.NewWriter(kafka.WriterConfig{
-			Brokers:   []string{"kafka:9092"},
-			Topic:     "errors",
-		Balancer: &kafka.LeastBytes{},
+			Brokers:  []string{"kafka:9092"},
+			Topic:    "errors",
+			Balancer: &kafka.LeastBytes{},
 		}),
 	}
 }

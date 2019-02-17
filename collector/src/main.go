@@ -53,7 +53,7 @@ func NewSpanCollector(p *kafka.Writer) func(http.ResponseWriter, *http.Request) 
 
 		spanMessage := shared.SpanMessage{
 			EntityName: entityName,
-			MessageId:  messageId,
+			MessageId:  messageId.String(),
 			Spans:      incomingSpans,
 		}
 
