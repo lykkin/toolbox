@@ -1,7 +1,7 @@
 package main
 
 import (
-	"shared"
+	st "shared/types"
 )
 
 type SpanEvent struct {
@@ -18,7 +18,7 @@ type SpanEvent struct {
 
 type SpanList *[]SpanEvent
 
-func SpanToEvent(s shared.Span, entityName string, entityId string) SpanEvent {
+func SpanToEvent(s st.Span, entityName string, entityId string) SpanEvent {
 	return SpanEvent{
 		TraceId:    s.TraceId,
 		SpanId:     s.SpanId,

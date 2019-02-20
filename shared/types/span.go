@@ -19,6 +19,7 @@ type SpanMessage struct {
 	LicenseKey  string `json:"license_key,omitempty"`
 	InsightsKey string `json:"insights_key,omitempty"`
 	EntityName  string `json:"entity_name"`
+	MessageId   string `json:"message_id"`
 	EntityId    string `json:"entity_id,omitempty"`
 	Spans       []Span `json:"spans"`
 }

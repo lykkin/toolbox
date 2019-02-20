@@ -9,7 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"shared"
+	sm "shared/message"
+	st "shared/types"
 )
 
 func SendMetrics(insightsKey string, metrics *MetricList, startTime uint64, interval uint64, resChan chan *RequestResult) {
@@ -53,7 +54,7 @@ func SendMetrics(insightsKey string, metrics *MetricList, startTime uint64, inte
 	resChan <- response
 }
 
-func consume(msgChan chan shared.SpanMessage, lock *sync.RWMutex, InsightsKeyToMetrics *map[string]MetricsMap, tagWhitelist *[]string) {
+func consume(msgChan chan st.SpanMessage, lock *sync.RWMutex, InsightsKeyToMetrics *map[string]MetricsMap, tagWhitelist *[]string) {
 	for msg := range msgChan {
 		if msg.InsightsKey != "" {
 			// lock for the whole consume loop, since we will be making
@@ -118,8 +119,8 @@ func main() {
 	tagWhitelist := make([]string, 0)
 	json.Unmarshal(whitelistJSON, &tagWhitelist)
 
-	reader := shared.NewSpanMessageConsumer("metric-consumers")
-	msgChan := make(chan shared.SpanMessage)
+	reader := sm.NewSpanMessageConsumer("metric-consumers")
+	msgChan := make(chan st.SpanMessage)
 	reader.Start(msgChan)
 
 	// since the map is shared between consumer and producer goroutines,
