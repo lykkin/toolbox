@@ -13,8 +13,8 @@ type Error struct {
 }
 
 type ErrorMessage struct {
-	MessageId string  `json:"message_id"`
-	Errors    []Error `json:"errors"`
+	MessageId string `json:"message_id"`
+	Error     Error  `json:"error"`
 }
 
 func NewError(message string, stack string, component string, event string) *Error {

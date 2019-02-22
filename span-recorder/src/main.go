@@ -41,9 +41,6 @@ func main() {
 
 	errWriter := sm.NewErrorMessageProducer()
 	errProducer := st.NewErrorProducer("span-recorder")
-	errWriter.Write("sadf", &[]st.Error{
-		*errProducer.Produce("hello", "world", "insert"), //TODO: get a stack
-	})
 
 	go func() {
 		for {
@@ -66,10 +63,13 @@ func main() {
 		query += "APPLY BATCH;"
 		err := session.Query(query, values...).Exec()
 		if err != nil {
-			errWriter.Write(msg.MessageId, &[]st.Error{
-				*errProducer.Produce(err.Error(), "", "insert"), //TODO: get a stack
-			})
-			log.Fatalln(err)
+			writerErr := errWriter.Write(
+				msg.MessageId,
+				errProducer.Produce(err.Error(), "", "insert"), //TODO: get a stack
+			)
+			if writerErr != nil {
+				log.Fatalln(err)
+			}
 		}
 	}
 }
