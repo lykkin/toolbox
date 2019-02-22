@@ -39,6 +39,12 @@ func main() {
 	msgChan := make(chan st.SpanMessage)
 	reader.Start(msgChan)
 
+	errWriter := sm.NewErrorMessageProducer()
+	errProducer := st.NewErrorProducer("span-recorder")
+	errWriter.Write("sadf", &[]st.Error{
+		*errProducer.Produce("hello", "world", "insert"), //TODO: get a stack
+	})
+
 	go func() {
 		for {
 			result := make(map[string]interface{})
@@ -60,6 +66,9 @@ func main() {
 		query += "APPLY BATCH;"
 		err := session.Query(query, values...).Exec()
 		if err != nil {
+			errWriter.Write(msg.MessageId, &[]st.Error{
+				*errProducer.Produce(err.Error(), "", "insert"), //TODO: get a stack
+			})
 			log.Fatalln(err)
 		}
 	}
