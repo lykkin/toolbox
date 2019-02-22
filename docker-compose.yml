@@ -1,6 +1,11 @@
 version: '3.2'
 
 services:
+    shared:
+        build:
+            context: .
+            dockerfile: shared/Dockerfile
+        image: shared
     collector:
         build:
             context: .
