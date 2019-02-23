@@ -8,7 +8,29 @@ import (
 	sdb "shared/db"
 	sm "shared/message"
 	st "shared/types"
+
+	"github.com/gocql/gocql"
 )
+
+func doQuery(values *[]interface{}, query *string, session *gocql.Session) error {
+	batchQuery := "BEGIN BATCH " + *query + "APPLY BATCH;"
+	return session.Query(batchQuery, *values...).Exec()
+}
+
+type errorHandler struct {
+	errWriter   *sm.ErrorMessageProducer
+	errProducer *st.ErrorProducer
+}
+
+func (eh *errorHandler) handleErr(messageId *string, err *error) {
+	writerErr := eh.errWriter.Write(
+		*messageId,
+		eh.errProducer.Produce((*err).Error(), "", "insert"), //TODO: get a stack
+	)
+	if writerErr != nil {
+		log.Fatalln(*err)
+	}
+}
 
 func main() {
 	//setup cassandra
@@ -41,6 +63,10 @@ func main() {
 
 	errWriter := sm.NewErrorMessageProducer()
 	errProducer := st.NewErrorProducer("span-recorder")
+	errHandler := &errorHandler{
+		errWriter:   errWriter,
+		errProducer: errProducer,
+	}
 
 	go func() {
 		for {
@@ -51,25 +77,33 @@ func main() {
 		}
 	}()
 
+	// used to control the max number of spans written per batch
+	MAX_BATCH_SIZE := 15
 	placeholderValues := []string{"?"}
 	for msg := range msgChan {
-		query := "BEGIN BATCH "
+		// TODO: break this up into smaller chunks, cassandra will only
+		// accept payloads less than 50kb
+		query := ""
 		values := make([]interface{}, 0)
+		batchSize := 0
 		for _, span := range msg.Spans {
 			fields, spanValues := sdb.GetKeysAndValues(span)
 			values = append(values, *spanValues...)
 			query += "INSERT into " + TABLE_NAME + " (" + strings.Join(*fields, ",") + ") VALUES (" + sdb.MakePlaceholderString(&placeholderValues, len(*fields)) + ");"
-		}
-		query += "APPLY BATCH;"
-		err := session.Query(query, values...).Exec()
-		if err != nil {
-			writerErr := errWriter.Write(
-				msg.MessageId,
-				errProducer.Produce(err.Error(), "", "insert"), //TODO: get a stack
-			)
-			if writerErr != nil {
-				log.Fatalln(err)
+			batchSize++
+			if batchSize == MAX_BATCH_SIZE {
+				err := doQuery(&values, &query, session)
+				if err != nil {
+					errHandler.handleErr(&msg.MessageId, &err)
+				}
+				query = ""
+				values = make([]interface{}, 0)
+				batchSize = 0
 			}
+		}
+		err := doQuery(&values, &query, session)
+		if err != nil {
+			errHandler.handleErr(&msg.MessageId, &err)
 		}
 	}
 }
