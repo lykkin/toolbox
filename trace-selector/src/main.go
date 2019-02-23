@@ -27,7 +27,8 @@ func main() {
 	KEYSPACE := "span_collector"
 	TABLE_NAME := KEYSPACE + ".interesting_traces"
 	tableSchema := map[string]string{
-		"trace_id": "text",
+		"inserted_at": "timestamp",
+		"trace_id":    "text",
 	}
 	session, err := sdb.SetupCassandraSchema(KEYSPACE, TABLE_NAME, tableSchema, "trace_id")
 	for err != nil {
@@ -66,7 +67,7 @@ func main() {
 			values := make([]interface{}, len(interestingTraces))
 			idx := 0
 			for traceId, _ := range interestingTraces {
-				query += "INSERT into " + TABLE_NAME + "(trace_id) VALUES (?);"
+				query += "INSERT into " + TABLE_NAME + "(inserted_at, trace_id) VALUES (toUnixTimestamp(now()), ?);"
 				values[idx] = traceId
 				idx++
 			}
