@@ -1,11 +1,13 @@
 version: '3.2'
 
 services:
+    # for building the base image for all services
     shared:
         build:
             context: .
             dockerfile: shared/Dockerfile
         image: shared
+
     collector:
         build:
             context: .
@@ -54,6 +56,17 @@ services:
         build:
             context: .
             dockerfile: span-recorder/Dockerfile
+        restart: on-failure
+        depends_on:
+            - kafka
+        links:
+            - kafka
+            - cassandra
+
+    trace-selector:
+        build:
+            context: .
+            dockerfile: trace-selector/Dockerfile
         restart: on-failure
         depends_on:
             - kafka
