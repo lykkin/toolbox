@@ -12,9 +12,9 @@ import (
 	"github.com/gocql/gocql"
 )
 
-func doQuery(values *[]interface{}, query *string, session *gocql.Session) error {
-	batchQuery := "BEGIN BATCH " + *query + "APPLY BATCH;"
-	return session.Query(batchQuery, *values...).Exec()
+func doQuery(errChan chan error, values []interface{}, query string, session *gocql.Session) {
+	batchQuery := "BEGIN BATCH " + query + "APPLY BATCH;"
+	errChan <- session.Query(batchQuery, values...).Exec()
 }
 
 type errorHandler struct {
@@ -40,6 +40,7 @@ func main() {
 	KEYSPACE := "span_collector"
 	TABLE_NAME := KEYSPACE + ".spans"
 	tableSchema := map[string]string{
+		"inserted_at": "timestamp",
 		"trace_id":    "text",
 		"span_id":     "text",
 		"parent_id":   "text",
@@ -79,6 +80,8 @@ func main() {
 
 	// used to control the max number of spans written per batch
 	MAX_BATCH_SIZE := 15
+	queriesRunning := 0
+	errChan := make(chan error)
 	placeholderValues := []string{"?"}
 	for msg := range msgChan {
 		// TODO: break this up into smaller chunks, cassandra will only
@@ -89,21 +92,23 @@ func main() {
 		for _, span := range msg.Spans {
 			fields, spanValues := sdb.GetKeysAndValues(span)
 			values = append(values, *spanValues...)
-			query += "INSERT into " + TABLE_NAME + " (" + strings.Join(*fields, ",") + ") VALUES (" + sdb.MakePlaceholderString(&placeholderValues, len(*fields)) + ");"
+			query += "INSERT into " + TABLE_NAME + " (inserted_at, " + strings.Join(*fields, ",") + ") VALUES (toUnixTimestamp(now()), " + sdb.MakePlaceholderString(&placeholderValues, len(*fields)) + ");"
 			batchSize++
 			if batchSize == MAX_BATCH_SIZE {
-				err := doQuery(&values, &query, session)
-				if err != nil {
-					errHandler.handleErr(&msg.MessageId, &err)
-				}
+				go doQuery(errChan, values, query, session)
+				queriesRunning++
 				query = ""
 				values = make([]interface{}, 0)
 				batchSize = 0
 			}
 		}
-		err := doQuery(&values, &query, session)
-		if err != nil {
-			errHandler.handleErr(&msg.MessageId, &err)
+		go doQuery(errChan, values, query, session)
+		for queriesRunning > 0 {
+			err := <-errChan
+			if err != nil {
+				errHandler.handleErr(&msg.MessageId, &err)
+			}
+			queriesRunning--
 		}
 	}
 }
