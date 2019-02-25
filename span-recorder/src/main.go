@@ -14,6 +14,7 @@ import (
 
 func doQuery(errChan chan error, values []interface{}, query string, session *gocql.Session) {
 	batchQuery := "BEGIN BATCH " + query + "APPLY BATCH;"
+	log.Print(values)
 	errChan <- session.Query(batchQuery, values...).Exec()
 }
 
@@ -40,20 +41,20 @@ func main() {
 	KEYSPACE := "span_collector"
 	TABLE_NAME := KEYSPACE + ".spans"
 	tableSchema := map[string]string{
-		"inserted_at": "timestamp",
 		"trace_id":    "text",
 		"span_id":     "text",
 		"parent_id":   "text",
 		"name":        "text",
+		"sent":        "Boolean",
 		"start_time":  "double",
 		"finish_time": "double",
 		"tags":        "map<text,text>",
 	}
-	session, err := sdb.SetupCassandraSchema(KEYSPACE, TABLE_NAME, tableSchema, "trace_id, span_id")
+	session, err := sdb.SetupCassandraSchema(KEYSPACE, TABLE_NAME, tableSchema, "trace_id, sent, span_id")
 	for err != nil {
 		log.Print("ran into an error while setting up cassandra, waiting 5 seconds: ", err)
 		time.Sleep(5 * time.Second)
-		session, err = sdb.SetupCassandraSchema(KEYSPACE, TABLE_NAME, tableSchema, "trace_id, span_id")
+		session, err = sdb.SetupCassandraSchema(KEYSPACE, TABLE_NAME, tableSchema, "trace_id, sent, span_id")
 	}
 	defer session.Close()
 
@@ -92,7 +93,7 @@ func main() {
 		for _, span := range msg.Spans {
 			fields, spanValues := sdb.GetKeysAndValues(span)
 			values = append(values, *spanValues...)
-			query += "INSERT into " + TABLE_NAME + " (inserted_at, " + strings.Join(*fields, ",") + ") VALUES (toUnixTimestamp(now()), " + sdb.MakePlaceholderString(&placeholderValues, len(*fields)) + ");"
+			query += "INSERT INTO " + TABLE_NAME + " (sent, " + strings.Join(*fields, ",") + ") VALUES (false, " + sdb.MakePlaceholderString(&placeholderValues, len(*fields)) + ");"
 			batchSize++
 			if batchSize == MAX_BATCH_SIZE {
 				go doQuery(errChan, values, query, session)
@@ -106,6 +107,7 @@ func main() {
 		for queriesRunning > 0 {
 			err := <-errChan
 			if err != nil {
+				log.Print(err)
 				errHandler.handleErr(&msg.MessageId, &err)
 			}
 			queriesRunning--

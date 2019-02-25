@@ -4,6 +4,8 @@ import (
 	"log"
 	"time"
 
+	"strings"
+
 	sdb "shared/db"
 	sm "shared/message"
 	st "shared/types"
@@ -27,8 +29,7 @@ func main() {
 	KEYSPACE := "span_collector"
 	TABLE_NAME := KEYSPACE + ".interesting_traces"
 	tableSchema := map[string]string{
-		"inserted_at": "timestamp",
-		"trace_id":    "text",
+		"trace_id": "text",
 	}
 	session, err := sdb.SetupCassandraSchema(KEYSPACE, TABLE_NAME, tableSchema, "trace_id")
 	for err != nil {
@@ -46,10 +47,12 @@ func main() {
 	errWriter := sm.NewErrorMessageProducer()
 	errProducer := st.NewErrorProducer("trace-selector")
 
+	filteringSet := make([]string, 0)
 	go func() {
 		for {
+			query := "SELECT count(*) FROM span_collector.spans WHERE trace_id IN (" + strings.Join(filteringSet, ", ") + ") AND sent = false"
 			result := make(map[string]interface{})
-			session.Query("SELECT COUNT(*) FROM " + TABLE_NAME).MapScan(result)
+			session.Query(query).MapScan(result)
 			log.Println("counts yo:", result)
 			time.Sleep(10 * time.Second)
 		}
@@ -59,7 +62,10 @@ func main() {
 		interestingTraces := make(map[string]bool)
 		for _, span := range msg.Spans {
 			if isInteresting(&span) {
-				interestingTraces[span.TraceId] = true
+				if _, ok := interestingTraces[span.TraceId]; !ok {
+					interestingTraces[span.TraceId] = true
+					filteringSet = append(filteringSet, "'"+span.TraceId+"'")
+				}
 			}
 		}
 		if len(interestingTraces) > 0 {
@@ -67,7 +73,7 @@ func main() {
 			values := make([]interface{}, len(interestingTraces))
 			idx := 0
 			for traceId, _ := range interestingTraces {
-				query += "INSERT into " + TABLE_NAME + "(inserted_at, trace_id) VALUES (toUnixTimestamp(now()), ?);"
+				query += "INSERT into " + TABLE_NAME + "(trace_id) VALUES (?);"
 				values[idx] = traceId
 				idx++
 			}
