@@ -4,8 +4,6 @@ import (
 	"log"
 	"time"
 
-	"strings"
-
 	sdb "shared/db"
 	sm "shared/message"
 	st "shared/types"
@@ -47,25 +45,16 @@ func main() {
 	errWriter := sm.NewErrorMessageProducer()
 	errProducer := st.NewErrorProducer("trace-selector")
 
-	filteringSet := make([]string, 0)
-	go func() {
-		for {
-			query := "SELECT count(*) FROM span_collector.spans WHERE trace_id IN (" + strings.Join(filteringSet, ", ") + ") AND sent = false"
-			result := make(map[string]interface{})
-			session.Query(query).MapScan(result)
-			log.Println("counts yo:", result)
-			time.Sleep(10 * time.Second)
-		}
-	}()
-
 	for msg := range msgChan {
 		interestingTraces := make(map[string]bool)
 		for _, span := range msg.Spans {
 			if isInteresting(&span) {
-				if _, ok := interestingTraces[span.TraceId]; !ok {
-					interestingTraces[span.TraceId] = true
-					filteringSet = append(filteringSet, "'"+span.TraceId+"'")
+				if msg.LicenseKey == "" {
+					// TODO: mark this as an error. there will be no way
+					// to send this without the right credentials
+					continue
 				}
+				interestingTraces[span.TraceId] = true
 			}
 		}
 		if len(interestingTraces) > 0 {

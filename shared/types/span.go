@@ -6,13 +6,13 @@ import (
 )
 
 type Span struct {
-	TraceId    string                 `json:"trace_id" cassandra:"trace_id"`
-	SpanId     string                 `json:"span_id" cassandra:"span_id"`
-	ParentId   string                 `json:"parent_id,omitempty" cassandra:"parent_id"`
-	Name       string                 `json:"name" cassandra:"name"`
-	StartTime  float64                `json:"start_time" cassandra:"start_time"`
-	FinishTime float64                `json:"finish_time" cassandra:"finish_time"`
-	Tags       map[string]interface{} `json:"tags,omitempty" cassandra:"tags"`
+	TraceId    string            `json:"trace_id" cassandra:"trace_id"`
+	SpanId     string            `json:"span_id" cassandra:"span_id"`
+	ParentId   string            `json:"parent_id,omitempty" cassandra:"parent_id"`
+	Name       string            `json:"name" cassandra:"name"`
+	StartTime  float64           `json:"start_time" cassandra:"start_time"`
+	FinishTime float64           `json:"finish_time" cassandra:"finish_time"`
+	Tags       map[string]string `json:"tags,omitempty" cassandra:"tags"`
 }
 
 type SpanMessage struct {

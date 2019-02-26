@@ -5,20 +5,23 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"sync"
+	"strings"
 	"time"
 
-	sm "shared/message"
+	sdb "shared/db"
 	st "shared/types"
+
+	"github.com/gocql/gocql"
 )
 
 func SendEvents(licenseKey string, events SpanList, resChan chan *RequestResult) {
 	payload := map[string][]SpanEvent{"spans": *events}
 	body, err := json.Marshal(payload)
 	response := new(RequestResult)
+	response.Events = events
+	response.LicenseKey = licenseKey
 	if err != nil {
 		response.Err = err
-		response.Events = events
 		resChan <- response
 		return
 	}
@@ -27,7 +30,6 @@ func SendEvents(licenseKey string, events SpanList, resChan chan *RequestResult)
 	req, err := http.NewRequest("POST", "https://staging-collector.newrelic.com/agent_listener/invoke_raw_method", bytes.NewBuffer(body))
 	if err != nil {
 		response.Err = err
-		response.Events = events
 		resChan <- response
 		return
 	}
@@ -45,57 +47,71 @@ func SendEvents(licenseKey string, events SpanList, resChan chan *RequestResult)
 	defer res.Body.Close()
 
 	// TODO: parse response and propagate it to the main goroutine
-	response.LicenseKey = licenseKey
 	resChan <- response
 }
 
-func consume(msgChan chan st.SpanMessage, lock *sync.RWMutex, LicenseKeyToEvents *map[string]SpanList) {
-	for msg := range msgChan {
-		if licenseKey := msg.LicenseKey; licenseKey != "" {
-			lock.Lock()
-			SpanBucket, ok := (*LicenseKeyToEvents)[licenseKey]
-			if !ok {
-				SpanBucket = new([]SpanEvent)
-				(*LicenseKeyToEvents)[licenseKey] = SpanBucket
-			}
-			for _, s := range msg.Spans {
-				// record the span in the payload to be set
-				*SpanBucket = append(*SpanBucket, SpanToEvent(s, msg.EntityName, msg.EntityId))
-			}
-			lock.Unlock()
-		}
-	}
-	log.Fatal("kafka message channel closed unexpectedly!")
-}
-
 func main() {
-	reader := sm.NewSpanMessageConsumer("span-consumers")
-	msgChan := make(chan st.SpanMessage)
-	reader.Start(msgChan)
+	cluster := gocql.NewCluster("cassandra")
+	cluster.Consistency = gocql.One
+	cluster.Keyspace = "span_collector"
+	session, err := cluster.CreateSession()
 
-	// since the map is shared between consumer and producer goroutines,
-	// we have to lock it.
-	lock := sync.RWMutex{}
+	for err != nil {
+		log.Print("ran into an error while setting up cassandra, waiting 5 seconds: ", err)
+		time.Sleep(5 * time.Second)
+		session, err = cluster.CreateSession()
+	}
+
 	// used to break events out into payloads to send
 	LicenseKeyToEvents := make(map[string]SpanList)
 
-	var timer *time.Timer
-	// kick off a gorouting responsible for reading messages in from kafka
-	go consume(msgChan, &lock, &LicenseKeyToEvents)
+	placeholderValues := []string{"?"}
 	for {
+		iter := session.Query("SELECT trace_id FROM span_collector.interesting_traces").Iter()
+		interestingTraces := make([]string, 0)
+		for {
+			result := make(map[string]interface{})
+			if !iter.MapScan(result) {
+				break
+			}
+			interestingTraces = append(interestingTraces, result["trace_id"].(string))
+		}
+		if len(interestingTraces) == 0 {
+			log.Print("no interesting traces found, sleeping for 10 seconds")
+			time.Sleep(10 * time.Second)
+			continue
+		}
+
+		iter = session.Query("SELECT * FROM span_collector.spans WHERE trace_id IN ? AND sent = false", interestingTraces).Iter()
+		for {
+			result := make(map[string]interface{})
+			if !iter.MapScan(result) {
+				break
+			}
+			licenseKey := result["license_key"].(string)
+			eventBucketPtr, ok := LicenseKeyToEvents[licenseKey]
+			if !ok {
+				eventBucketPtr = new([]SpanEvent)
+				LicenseKeyToEvents[licenseKey] = eventBucketPtr
+			}
+			err, spanInterface := sdb.ParseRow(st.Span{}, result)
+			if err != nil {
+				log.Print("uh oh", err)
+			}
+			spanEvent := SpanToEvent(spanInterface.(st.Span), result["entity_name"].(string), result["entity_id"].(string))
+			*eventBucketPtr = append(*eventBucketPtr, spanEvent)
+		}
 		// only process if there are events to send
 		if len(LicenseKeyToEvents) > 0 {
 			numRequestsAwaiting := len(LicenseKeyToEvents)
 			log.Printf("events found, sending %s requests", numRequestsAwaiting)
 			resChan := make(chan *RequestResult)
 			// loop through the events bucketed by license key and kick the request off in parallel
-			lock.Lock()
 			for licenseKey, events := range LicenseKeyToEvents {
 				go SendEvents(licenseKey, events, resChan)
 				delete(LicenseKeyToEvents, licenseKey)
 				// record the number of outstanding requests
 			}
-			lock.Unlock()
 
 			// read off the return channel till all requests have come back
 			for ; numRequestsAwaiting != 0; numRequestsAwaiting-- {
@@ -104,21 +120,35 @@ func main() {
 				// the queue, and let next pass pick them up.
 
 				// TODO: extra error handling here? are there cases where we want to throw the events away anyway?
-				if result.Err != nil {
-					lock.Lock()
-					SpanBucket := LicenseKeyToEvents[result.LicenseKey]
-					*SpanBucket = append(*SpanBucket, *result.Events...)
-					lock.Unlock()
+				if result.Err == nil {
+					spanEvents := *result.Events
+					deleteQuery := "BEGIN BATCH "
+					deleteValues := make([]interface{}, 0)
+					insertQuery := "BEGIN BATCH "
+					insertValues := make([]interface{}, 0)
+					for _, s := range spanEvents {
+						deleteQuery += "DELETE FROM span_collector.spans WHERE trace_id = ? AND sent = false AND span_id = ?;"
+						deleteValues = append(deleteValues, s.TraceId, s.SpanId)
+						fields, spanValues := sdb.GetKeysAndValues(EventToSpan(s))
+						// Add on all the message level info
+						*fields = append(*fields, "entity_name", "license_key", "entity_id")
+						*spanValues = append(*spanValues, s.EntityName, result.LicenseKey, s.EntityId)
+						insertValues = append(insertValues, *spanValues...)
+						insertQuery += "INSERT INTO span_collector.spans (sent, " + strings.Join(*fields, ",") + ") VALUES (true, " + sdb.MakePlaceholderString(&placeholderValues, len(*fields)) + ");"
+					}
+					deleteQuery += "APPLY BATCH;"
+					insertQuery += "APPLY BATCH;"
+					err := session.Query(insertQuery, insertValues...).Exec()
+					log.Print(err)
+					err = session.Query(deleteQuery, deleteValues...).Exec()
+					log.Print(err)
 				}
 			}
 			log.Print("waiting 10 seconds to send again")
-			timer = time.NewTimer(10 * time.Second)
+			time.Sleep(10 * time.Second)
 		} else {
 			log.Print("no input found, waiting 3 seconds to check again")
-			timer = time.NewTimer(3 * time.Second)
+			time.Sleep(3 * time.Second)
 		}
-
-		// wait some time for more spans to roll in
-		<-timer.C
 	} // END FOR
 }

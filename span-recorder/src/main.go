@@ -14,7 +14,6 @@ import (
 
 func doQuery(errChan chan error, values []interface{}, query string, session *gocql.Session) {
 	batchQuery := "BEGIN BATCH " + query + "APPLY BATCH;"
-	log.Print(values)
 	errChan <- session.Query(batchQuery, values...).Exec()
 }
 
@@ -48,9 +47,12 @@ func main() {
 		"sent":        "Boolean",
 		"start_time":  "double",
 		"finish_time": "double",
+		"license_key": "text",
+		"entity_id":   "text",
+		"entity_name": "text",
 		"tags":        "map<text,text>",
 	}
-	session, err := sdb.SetupCassandraSchema(KEYSPACE, TABLE_NAME, tableSchema, "trace_id, sent, span_id")
+	session, err := sdb.SetupCassandraSchema(KEYSPACE, TABLE_NAME, tableSchema, "trace_id, span_id, sent")
 	for err != nil {
 		log.Print("ran into an error while setting up cassandra, waiting 5 seconds: ", err)
 		time.Sleep(5 * time.Second)
@@ -92,6 +94,20 @@ func main() {
 		batchSize := 0
 		for _, span := range msg.Spans {
 			fields, spanValues := sdb.GetKeysAndValues(span)
+
+			// Add on all the message level info
+			*fields = append(*fields, "entity_name")
+			*spanValues = append(*spanValues, msg.EntityName)
+
+			if msg.LicenseKey != "" {
+				*fields = append(*fields, "license_key")
+				*spanValues = append(*spanValues, msg.LicenseKey)
+			}
+
+			if msg.EntityId != "" {
+				*fields = append(*fields, "entity_id")
+				*spanValues = append(*spanValues, msg.EntityId)
+			}
 			values = append(values, *spanValues...)
 			query += "INSERT INTO " + TABLE_NAME + " (sent, " + strings.Join(*fields, ",") + ") VALUES (false, " + sdb.MakePlaceholderString(&placeholderValues, len(*fields)) + ");"
 			batchSize++
@@ -104,6 +120,7 @@ func main() {
 			}
 		}
 		go doQuery(errChan, values, query, session)
+		queriesRunning++
 		for queriesRunning > 0 {
 			err := <-errChan
 			if err != nil {
