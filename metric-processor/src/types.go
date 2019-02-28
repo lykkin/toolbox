@@ -30,15 +30,18 @@ func (m *Metric) Recognizes(attrs map[string]interface{}) bool {
 
 func (m *Metric) Add(duration float64) {
 	v := &m.Value
-	v.Count++
-	v.Sum += duration
-	if v.Min > duration {
-		v.Min = duration
-	}
 
-	if v.Max < duration {
+    if c.Count == 0 {
+        v.Min = duration
+        v.Max = duration
+    } else if v.Min > duration {
+		v.Min = duration
+	} else if v.Max < duration {
 		v.Max = duration
 	}
+
+	v.Count++
+	v.Sum += duration
 }
 
 type MetricBucket struct {
