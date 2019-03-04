@@ -63,16 +63,22 @@ func main() {
 	msgChan := make(chan st.ErrorMessage)
 	startReader(msgChan)
 
+	go func() {
+		for {
+			result := make(map[string]interface{})
+			session.Query("SELECT COUNT(*) FROM " + TABLE_NAME).MapScan(result)
+			log.Println("counts yo:", result)
+			time.Sleep(10 * time.Second)
+		}
+	}()
+
 	placeholderValues := []string{"?"}
 	for msg := range msgChan {
-		query := "BEGIN BATCH "
 		values := make([]interface{}, 0)
-		for _, e := range msg.Errors {
-			fields, errorValues := sdb.GetKeysAndValues(e)
-			values = append(values, *errorValues...)
-			query += "INSERT into " + TABLE_NAME + " (" + strings.Join(*fields, ",") + ") VALUES (" + sdb.MakePlaceholderString(&placeholderValues, len(*fields)) + ");"
-		}
-		query += "APPLY BATCH;"
+		e := msg.Error
+		fields, errorValues := sdb.GetKeysAndValues(e)
+		values = append(values, *errorValues...)
+		query := "INSERT into " + TABLE_NAME + " (" + strings.Join(*fields, ",") + ") VALUES (" + sdb.MakePlaceholderString(&placeholderValues, len(*fields)) + ");"
 		err := session.Query(query, values...).Exec()
 		if err != nil {
 			log.Fatalln(err)

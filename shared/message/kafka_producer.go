@@ -23,7 +23,11 @@ func NewErrorMessageProducer() *ErrorMessageProducer {
 	}
 }
 
-func (k *ErrorMessageProducer) Write(errorMsg st.ErrorMessage) error {
+func (k *ErrorMessageProducer) Write(messageId string, msgErr *st.Error) error {
+	errorMsg := st.ErrorMessage{
+		MessageId: messageId,
+		Error:     *msgErr,
+	}
 	msg, err := json.Marshal(errorMsg)
 	if err != nil {
 		return err

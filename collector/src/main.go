@@ -48,6 +48,8 @@ func NewSpanCollector(p *kafka.Writer) func(http.ResponseWriter, *http.Request) 
 		}
 		messageId, err := uuid.NewV4()
 		if err != nil {
+			fmt.Fprintf(w, "Error occured while generating message ID: %s\n", err)
+			return
 			// send an error message
 		}
 
@@ -82,7 +84,7 @@ func NewSpanCollector(p *kafka.Writer) func(http.ResponseWriter, *http.Request) 
 				Value: []byte(msg),
 			},
 		)
-		// TODO: respond to the request
+		fmt.Fprintf(w, "success! message id: %s", messageId.String())
 	}
 }
 

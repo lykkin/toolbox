@@ -39,6 +39,9 @@ func main() {
 	msgChan := make(chan st.SpanMessage)
 	reader.Start(msgChan)
 
+	errWriter := sm.NewErrorMessageProducer()
+	errProducer := st.NewErrorProducer("span-recorder")
+
 	go func() {
 		for {
 			result := make(map[string]interface{})
@@ -60,7 +63,13 @@ func main() {
 		query += "APPLY BATCH;"
 		err := session.Query(query, values...).Exec()
 		if err != nil {
-			log.Fatalln(err)
+			writerErr := errWriter.Write(
+				msg.MessageId,
+				errProducer.Produce(err.Error(), "", "insert"), //TODO: get a stack
+			)
+			if writerErr != nil {
+				log.Fatalln(err)
+			}
 		}
 	}
 }
