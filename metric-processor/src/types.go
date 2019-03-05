@@ -31,10 +31,10 @@ func (m *Metric) Recognizes(attrs map[string]interface{}) bool {
 func (m *Metric) Add(duration float64) {
 	v := &m.Value
 
-    if c.Count == 0 {
-        v.Min = duration
-        v.Max = duration
-    } else if v.Min > duration {
+	if v.Count == 0 {
+		v.Min = duration
+		v.Max = duration
+	} else if v.Min > duration {
 		v.Min = duration
 	} else if v.Max < duration {
 		v.Max = duration
