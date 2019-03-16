@@ -134,7 +134,6 @@ func main() {
 	// kick off a gorouting responsible for reading messages in from kafka
 	go consume(msgChan, &lock, &InsightsKeyToMetrics, &tagWhitelist)
 
-	var timer *time.Timer
 	for {
 		if len(InsightsKeyToMetrics) > 0 {
 			resChan := make(chan *RequestResult)
@@ -168,14 +167,11 @@ func main() {
 				}
 			}
 			log.Print("waiting 10 seconds to send again")
-			timer = time.NewTimer(10 * time.Second)
 			startTime = getTimestampMs()
+			time.Sleep(10 * time.Second)
 		} else {
 			log.Print("no input found, waiting 3 seconds to check again")
-			timer = time.NewTimer(3 * time.Second)
+			time.Sleep(3 * time.Second)
 		}
-
-		// wait some time for more spans to roll in
-		<-timer.C
 	}
 }

@@ -52,7 +52,7 @@ func main() {
 		"component": "text",
 		"event":     "text",
 	}
-	session, err := sdb.SetupCassandraSchema(KEYSPACE, TABLE_NAME, tableSchema, "timestamp")
+	session, err := sdb.SetupCassandraSchema(KEYSPACE, TABLE_NAME, tableSchema, "component, timestamp")
 	for err != nil {
 		log.Print("ran into an error while setting up cassandra, waiting 5 seconds: ", err)
 		time.Sleep(5 * time.Second)
@@ -74,12 +74,10 @@ func main() {
 
 	placeholderValues := []string{"?"}
 	for msg := range msgChan {
-		values := make([]interface{}, 0)
 		e := msg.Error
 		fields, errorValues := sdb.GetKeysAndValues(e)
-		values = append(values, *errorValues...)
 		query := "INSERT into " + TABLE_NAME + " (" + strings.Join(*fields, ",") + ") VALUES (" + sdb.MakePlaceholderString(&placeholderValues, len(*fields)) + ");"
-		err := session.Query(query, values...).Exec()
+		err := session.Query(query, *errorValues...).Exec()
 		if err != nil {
 			log.Fatalln(err)
 		}

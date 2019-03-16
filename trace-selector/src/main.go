@@ -45,37 +45,41 @@ func main() {
 	errWriter := sm.NewErrorMessageProducer()
 	errProducer := st.NewErrorProducer("trace-selector")
 
+	errChan := make(chan error)
+	qb := sdb.NewQueryBatcher(session, errChan)
+
 	for msg := range msgChan {
 		interestingTraces := make(map[string]bool)
 		for _, span := range msg.Spans {
 			if isInteresting(&span) {
 				if msg.LicenseKey == "" {
-					// TODO: mark this as an error. there will be no way
-					// to send this without the right credentials
+					// TODO: mark this as an error. there will be no way to send this without
+					// the right credentials
 					continue
 				}
 				interestingTraces[span.TraceId] = true
 			}
 		}
 		if len(interestingTraces) > 0 {
-			query := "BEGIN BATCH "
-			values := make([]interface{}, len(interestingTraces))
-			idx := 0
 			for traceId, _ := range interestingTraces {
-				query += "INSERT into " + TABLE_NAME + "(trace_id) VALUES (?);"
-				values[idx] = traceId
-				idx++
+				qb.AddQuery("INSERT into "+TABLE_NAME+"(trace_id) VALUES (?);", &[]interface{}{traceId})
 			}
-			query += "APPLY BATCH;"
-			err := session.Query(query, values...).Exec()
-			if err != nil {
-				writerErr := errWriter.Write(
-					msg.MessageId,
-					errProducer.Produce(err.Error(), "", "insert"), //TODO: get a stack
-				)
-				if writerErr != nil {
-					log.Fatalln(err)
+
+			qb.Execute()
+			qb.Reset()
+
+			for qb.ActiveQueries > 0 {
+				err := <-errChan
+				if err != nil {
+					writerErr := errWriter.Write(
+						msg.MessageId,
+						errProducer.Produce(err.Error(), "", "insert"), //TODO: get a stack
+					)
+					if writerErr != nil {
+						log.Fatalln(err)
+					}
 				}
+				qb.ActiveQueries--
 			}
 		}
 	}

@@ -8,14 +8,7 @@ import (
 	sdb "shared/db"
 	sm "shared/message"
 	st "shared/types"
-
-	"github.com/gocql/gocql"
 )
-
-func doQuery(errChan chan error, values []interface{}, query string, session *gocql.Session) {
-	batchQuery := "BEGIN BATCH " + query + "APPLY BATCH;"
-	errChan <- session.Query(batchQuery, values...).Exec()
-}
 
 type errorHandler struct {
 	errWriter   *sm.ErrorMessageProducer
@@ -81,17 +74,13 @@ func main() {
 		}
 	}()
 
-	// used to control the max number of spans written per batch
-	MAX_BATCH_SIZE := 15
-	queriesRunning := 0
-	errChan := make(chan error)
+	queryErrChan := make(chan error)
+	qb := sdb.NewQueryBatcher(session, queryErrChan)
 	placeholderValues := []string{"?"}
+
 	for msg := range msgChan {
 		// TODO: break this up into smaller chunks, cassandra will only
 		// accept payloads less than 50kb
-		query := ""
-		values := make([]interface{}, 0)
-		batchSize := 0
 		for _, span := range msg.Spans {
 			fields, spanValues := sdb.GetKeysAndValues(span)
 
@@ -108,26 +97,20 @@ func main() {
 				*fields = append(*fields, "entity_id")
 				*spanValues = append(*spanValues, msg.EntityId)
 			}
-			values = append(values, *spanValues...)
-			query += "INSERT INTO " + TABLE_NAME + " (sent, " + strings.Join(*fields, ",") + ") VALUES (false, " + sdb.MakePlaceholderString(&placeholderValues, len(*fields)) + ");"
-			batchSize++
-			if batchSize == MAX_BATCH_SIZE {
-				go doQuery(errChan, values, query, session)
-				queriesRunning++
-				query = ""
-				values = make([]interface{}, 0)
-				batchSize = 0
-			}
+			query := "INSERT INTO " + TABLE_NAME + " (sent, " + strings.Join(*fields, ",") + ") VALUES (false, " + sdb.MakePlaceholderString(&placeholderValues, len(*fields)) + ");"
+			qb.AddQuery(query, spanValues)
 		}
-		go doQuery(errChan, values, query, session)
-		queriesRunning++
-		for queriesRunning > 0 {
-			err := <-errChan
+
+		qb.Execute()
+		qb.Reset()
+
+		for qb.ActiveQueries > 0 {
+			err := <-queryErrChan
 			if err != nil {
 				log.Print(err)
 				errHandler.handleErr(&msg.MessageId, &err)
 			}
-			queriesRunning--
+			qb.ActiveQueries--
 		}
 	}
 }

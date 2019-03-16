@@ -50,6 +50,22 @@ func SendEvents(licenseKey string, events SpanList, resChan chan *RequestResult)
 	resChan <- response
 }
 
+func getInterestingTraces(session *gocql.Session) []string {
+	iter := session.Query("SELECT trace_id FROM span_collector.interesting_traces").Iter()
+	interestingTraces := make([]string, 0)
+	for {
+		result := make(map[string]interface{})
+		if !iter.MapScan(result) {
+			break
+		}
+		interestingTraces = append(interestingTraces, result["trace_id"].(string))
+	}
+	return interestingTraces
+}
+
+func getUnsentSpans(session *gocql.Session, traceIds *[]string) {
+}
+
 func main() {
 	cluster := gocql.NewCluster("cassandra")
 	cluster.Consistency = gocql.One
@@ -67,22 +83,15 @@ func main() {
 
 	placeholderValues := []string{"?"}
 	for {
-		iter := session.Query("SELECT trace_id FROM span_collector.interesting_traces").Iter()
-		interestingTraces := make([]string, 0)
-		for {
-			result := make(map[string]interface{})
-			if !iter.MapScan(result) {
-				break
-			}
-			interestingTraces = append(interestingTraces, result["trace_id"].(string))
-		}
+		interestingTraces := getInterestingTraces(session)
+
 		if len(interestingTraces) == 0 {
 			log.Print("no interesting traces found, sleeping for 10 seconds")
 			time.Sleep(10 * time.Second)
 			continue
 		}
 
-		iter = session.Query("SELECT * FROM span_collector.spans WHERE trace_id IN ? AND sent = false", interestingTraces).Iter()
+		iter := session.Query("SELECT * FROM span_collector.spans WHERE trace_id IN ? AND sent = false", interestingTraces).Iter()
 		for {
 			result := make(map[string]interface{})
 			if !iter.MapScan(result) {
