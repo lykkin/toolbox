@@ -19,17 +19,9 @@ func (qb *queryBatcher) CanFit(numQueries int) bool {
 	return len(qb.queries)+numQueries <= qb.maxBatchSize
 }
 
-func (qb *queryBatcher) AddQuery(query string, values *[]interface{}) bool {
+func (qb *queryBatcher) AddQuery(query string, values *[]interface{}) {
 	qb.queries = append(qb.queries, query)
 	qb.values = append(qb.values, *values...)
-	if len(qb.queries) == qb.maxBatchSize {
-		// TODO: this is an awkward side effect in this add method,
-		// probably better to pull it out of this method
-		qb.Execute()
-		qb.Reset()
-		return true
-	}
-	return false
 }
 
 func (qb *queryBatcher) Reset() {

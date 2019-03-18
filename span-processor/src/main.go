@@ -51,6 +51,7 @@ func SendEvents(licenseKey string, events SpanList, resChan chan *RequestResult)
 }
 
 func getInterestingTraces(session *gocql.Session) []string {
+	// TODO: cache this and update it later so it isn't hammering the db
 	iter := session.Query("SELECT trace_id FROM span_collector.interesting_traces").Iter()
 	interestingTraces := make([]string, 0)
 	for {
@@ -61,9 +62,6 @@ func getInterestingTraces(session *gocql.Session) []string {
 		interestingTraces = append(interestingTraces, result["trace_id"].(string))
 	}
 	return interestingTraces
-}
-
-func getUnsentSpans(session *gocql.Session, traceIds *[]string) {
 }
 
 func main() {
@@ -77,6 +75,9 @@ func main() {
 		time.Sleep(5 * time.Second)
 		session, err = cluster.CreateSession()
 	}
+
+	errChan := make(chan error)
+	qb := sdb.NewQueryBatcher(session, errChan)
 
 	// used to break events out into payloads to send
 	LicenseKeyToEvents := make(map[string]SpanList)
@@ -131,28 +132,40 @@ func main() {
 				// TODO: extra error handling here? are there cases where we want to throw the events away anyway?
 				if result.Err == nil {
 					spanEvents := *result.Events
-					deleteQuery := "BEGIN BATCH "
-					deleteValues := make([]interface{}, 0)
-					insertQuery := "BEGIN BATCH "
-					insertValues := make([]interface{}, 0)
 					for _, s := range spanEvents {
-						deleteQuery += "DELETE FROM span_collector.spans WHERE trace_id = ? AND sent = false AND span_id = ?;"
-						deleteValues = append(deleteValues, s.TraceId, s.SpanId)
+						if !qb.CanFit(2) {
+							qb.Execute()
+							qb.Reset()
+						}
+						qb.AddQuery(
+							"DELETE FROM span_collector.spans WHERE trace_id = ? AND sent = false AND span_id = ?;",
+							&[]interface{}{
+								s.TraceId,
+								s.SpanId,
+							},
+						)
 						fields, spanValues := sdb.GetKeysAndValues(EventToSpan(s))
-						// Add on all the message level info
 						*fields = append(*fields, "entity_name", "license_key", "entity_id")
 						*spanValues = append(*spanValues, s.EntityName, result.LicenseKey, s.EntityId)
-						insertValues = append(insertValues, *spanValues...)
-						insertQuery += "INSERT INTO span_collector.spans (sent, " + strings.Join(*fields, ",") + ") VALUES (true, " + sdb.MakePlaceholderString(&placeholderValues, len(*fields)) + ");"
+						qb.AddQuery(
+							"INSERT INTO span_collector.spans (sent, "+strings.Join(*fields, ",")+") VALUES (true, "+sdb.MakePlaceholderString(&placeholderValues, len(*fields))+");",
+							spanValues,
+						)
 					}
-					deleteQuery += "APPLY BATCH;"
-					insertQuery += "APPLY BATCH;"
-					err := session.Query(insertQuery, insertValues...).Exec()
-					log.Print(err)
-					err = session.Query(deleteQuery, deleteValues...).Exec()
-					log.Print(err)
+					qb.Execute()
+					qb.Reset()
 				}
 			}
+
+			for qb.ActiveQueries > 0 {
+				err := <-errChan
+				if err != nil {
+					log.Print(err)
+					//TODO: errHandler.handleErr(&msg.MessageId, &err)
+				}
+				qb.ActiveQueries--
+			}
+
 			log.Print("waiting 10 seconds to send again")
 			time.Sleep(10 * time.Second)
 		} else {

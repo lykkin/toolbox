@@ -98,6 +98,10 @@ func main() {
 				*spanValues = append(*spanValues, msg.EntityId)
 			}
 			query := "INSERT INTO " + TABLE_NAME + " (sent, " + strings.Join(*fields, ",") + ") VALUES (false, " + sdb.MakePlaceholderString(&placeholderValues, len(*fields)) + ");"
+			if !qb.CanFit(1) {
+				qb.Execute()
+				qb.Reset()
+			}
 			qb.AddQuery(query, spanValues)
 		}
 

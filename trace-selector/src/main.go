@@ -62,6 +62,10 @@ func main() {
 		}
 		if len(interestingTraces) > 0 {
 			for traceId, _ := range interestingTraces {
+				if !qb.CanFit(1) {
+					qb.Execute()
+					qb.Reset()
+				}
 				qb.AddQuery("INSERT into "+TABLE_NAME+"(trace_id) VALUES (?);", &[]interface{}{traceId})
 			}
 
