@@ -64,6 +64,29 @@ func getInterestingTraces(session *gocql.Session) []string {
 	return interestingTraces
 }
 
+func populateEventMap(session *gocql.Session, interestingTraces *[]string, LicenseKeyToEvents *map[string]SpanList) {
+	iter := session.Query("SELECT * FROM span_collector.spans WHERE trace_id IN ? AND sent = false", *interestingTraces).Iter()
+	for {
+		result := make(map[string]interface{})
+		if !iter.MapScan(result) {
+			break
+		}
+		licenseKey := result["license_key"].(string)
+		eventBucketPtr, ok := (*LicenseKeyToEvents)[licenseKey]
+		if !ok {
+			eventBucketPtr = new([]SpanEvent)
+			(*LicenseKeyToEvents)[licenseKey] = eventBucketPtr
+		}
+		err, spanInterface := sdb.ParseRow(st.Span{}, result)
+		if err != nil {
+			log.Print("uh oh", err)
+		}
+		spanEvent := SpanToEvent(spanInterface.(st.Span), result["entity_name"].(string), result["entity_id"].(string))
+		*eventBucketPtr = append(*eventBucketPtr, spanEvent)
+	}
+
+}
+
 func main() {
 	cluster := gocql.NewCluster("cassandra")
 	cluster.Consistency = gocql.One
@@ -92,25 +115,9 @@ func main() {
 			continue
 		}
 
-		iter := session.Query("SELECT * FROM span_collector.spans WHERE trace_id IN ? AND sent = false", interestingTraces).Iter()
-		for {
-			result := make(map[string]interface{})
-			if !iter.MapScan(result) {
-				break
-			}
-			licenseKey := result["license_key"].(string)
-			eventBucketPtr, ok := LicenseKeyToEvents[licenseKey]
-			if !ok {
-				eventBucketPtr = new([]SpanEvent)
-				LicenseKeyToEvents[licenseKey] = eventBucketPtr
-			}
-			err, spanInterface := sdb.ParseRow(st.Span{}, result)
-			if err != nil {
-				log.Print("uh oh", err)
-			}
-			spanEvent := SpanToEvent(spanInterface.(st.Span), result["entity_name"].(string), result["entity_id"].(string))
-			*eventBucketPtr = append(*eventBucketPtr, spanEvent)
-		}
+		// collect unsent spans belonging to selected traces
+		populateEventMap(session, &interestingTraces, &LicenseKeyToEvents)
+
 		// only process if there are events to send
 		if len(LicenseKeyToEvents) > 0 {
 			numRequestsAwaiting := len(LicenseKeyToEvents)

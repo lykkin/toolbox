@@ -42,8 +42,7 @@ func main() {
 	msgChan := make(chan st.SpanMessage)
 	reader.Start(msgChan)
 
-	errWriter := sm.NewErrorMessageProducer()
-	errProducer := st.NewErrorProducer("trace-selector")
+	errHandler := sm.NewErrorHandler("trace-selector")
 
 	errChan := make(chan error)
 	qb := sdb.NewQueryBatcher(session, errChan)
@@ -75,13 +74,11 @@ func main() {
 			for qb.ActiveQueries > 0 {
 				err := <-errChan
 				if err != nil {
-					writerErr := errWriter.Write(
-						msg.MessageId,
-						errProducer.Produce(err.Error(), "", "insert"), //TODO: get a stack
+					errHandler.HandleErr(
+						&msg.MessageId,
+						err,
+						"insert",
 					)
-					if writerErr != nil {
-						log.Fatalln(err)
-					}
 				}
 				qb.ActiveQueries--
 			}

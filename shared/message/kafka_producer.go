@@ -3,6 +3,7 @@ package shared
 import (
 	"context"
 	"encoding/json"
+	"log"
 
 	st "shared/types"
 
@@ -39,4 +40,32 @@ func (k *ErrorMessageProducer) Write(messageId string, msgErr *st.Error) error {
 		},
 	)
 	return nil
+}
+
+type ErrorHandler struct {
+	errWriter   *ErrorMessageProducer
+	errProducer *st.ErrorProducer
+}
+
+func (eh *ErrorHandler) HandleErr(messageId *string, err error, event string) {
+	writerErr := eh.errWriter.Write(
+		*messageId,
+		eh.errProducer.Produce(
+			err.Error(),
+			"", //TODO: get a stack
+			event,
+		),
+	)
+	if writerErr != nil {
+		log.Fatalln(writerErr)
+	}
+}
+
+func NewErrorHandler(component string) *ErrorHandler {
+	errWriter := NewErrorMessageProducer()
+	errProducer := st.NewErrorProducer(component)
+	return &ErrorHandler{
+		errWriter:   errWriter,
+		errProducer: errProducer,
+	}
 }

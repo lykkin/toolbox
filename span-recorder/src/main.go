@@ -10,21 +10,6 @@ import (
 	st "shared/types"
 )
 
-type errorHandler struct {
-	errWriter   *sm.ErrorMessageProducer
-	errProducer *st.ErrorProducer
-}
-
-func (eh *errorHandler) handleErr(messageId *string, err *error) {
-	writerErr := eh.errWriter.Write(
-		*messageId,
-		eh.errProducer.Produce((*err).Error(), "", "insert"), //TODO: get a stack
-	)
-	if writerErr != nil {
-		log.Fatalln(*err)
-	}
-}
-
 func main() {
 	//setup cassandra
 	// TODO: make this less awful (e.g. do proper migrations)
@@ -58,12 +43,7 @@ func main() {
 	msgChan := make(chan st.SpanMessage)
 	reader.Start(msgChan)
 
-	errWriter := sm.NewErrorMessageProducer()
-	errProducer := st.NewErrorProducer("span-recorder")
-	errHandler := &errorHandler{
-		errWriter:   errWriter,
-		errProducer: errProducer,
-	}
+	errHandler := sm.NewErrorHandler("span-recorder")
 
 	go func() {
 		for {
@@ -112,7 +92,11 @@ func main() {
 			err := <-queryErrChan
 			if err != nil {
 				log.Print(err)
-				errHandler.handleErr(&msg.MessageId, &err)
+				errHandler.HandleErr(
+					&msg.MessageId,
+					err,
+					"insert",
+				)
 			}
 			qb.ActiveQueries--
 		}
