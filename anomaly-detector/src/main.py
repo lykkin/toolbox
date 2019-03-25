@@ -33,4 +33,4 @@ for msg in consumer:
 
         anomalyScore = result.inferences['anomalyScore']
         if anomalyScore > 0.9:
-            print 'found an anomaly in ', anomalyScore, span['span_id']
+            print 'found an anomaly in ', anomalyScore, span['span_id'], span['finish_time'] - span['start_time']

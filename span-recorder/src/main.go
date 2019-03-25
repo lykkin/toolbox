@@ -56,7 +56,6 @@ func main() {
         Balancer: &kafka.LeastBytes{},
     })
 
-	/* debugging query
 	go func() {
 		for {
 			result := make(map[string]interface{})
@@ -65,7 +64,6 @@ func main() {
 			time.Sleep(10 * time.Second)
 		}
 	}()
-	*/
 
 	queryErrChan := make(chan error)
 	qb := sdb.NewQueryBatcher(session, queryErrChan)
