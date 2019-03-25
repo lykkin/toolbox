@@ -52,6 +52,16 @@ services:
         links:
             - kafka
 
+    anomaly-detector:
+        build:
+            context: .
+            dockerfile: anomaly-detector/Dockerfile
+        restart: on-failure
+        depends_on:
+            - kafka
+        links:
+            - kafka
+
     span-recorder:
         build:
             context: .

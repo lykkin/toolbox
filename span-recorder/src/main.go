@@ -5,9 +5,14 @@ import (
 	"strings"
 	"time"
 
+    "context"
+    "encoding/json"
+
 	sdb "shared/db"
 	sm "shared/message"
 	st "shared/types"
+
+    "github.com/segmentio/kafka-go"
 )
 
 func main() {
@@ -45,6 +50,13 @@ func main() {
 
 	errHandler := sm.NewErrorHandler("span-recorder")
 
+    w := kafka.NewWriter(kafka.WriterConfig{
+        Brokers: []string{"kafka:9092"},
+        Topic: "parentSpans",
+        Balancer: &kafka.LeastBytes{},
+    })
+
+	/* debugging query
 	go func() {
 		for {
 			result := make(map[string]interface{})
@@ -53,15 +65,21 @@ func main() {
 			time.Sleep(10 * time.Second)
 		}
 	}()
+	*/
 
 	queryErrChan := make(chan error)
 	qb := sdb.NewQueryBatcher(session, queryErrChan)
 	placeholderValues := []string{"?"}
 
 	for msg := range msgChan {
+        parentSpans := make([]st.Span, 0)
 		// TODO: break this up into smaller chunks, cassandra will only
 		// accept payloads less than 50kb
 		for _, span := range msg.Spans {
+            if span.ParentId == "" {
+                parentSpans = append(parentSpans, span)
+            }
+
 			fields, spanValues := sdb.GetKeysAndValues(span)
 
 			// Add on all the message level info
@@ -79,26 +97,49 @@ func main() {
 			}
 			query := "INSERT INTO " + TABLE_NAME + " (sent, " + strings.Join(*fields, ",") + ") VALUES (false, " + sdb.MakePlaceholderString(&placeholderValues, len(*fields)) + ");"
 			if !qb.CanFit(1) {
-				qb.Execute()
+                err := qb.SyncExecute()
+                if err != nil {
+                    log.Print(err)
+                    errHandler.HandleErr(
+                        &msg.MessageId,
+                        err,
+                        "insert",
+                    )
+                }
 				qb.Reset()
 			}
 			qb.AddQuery(query, spanValues)
 		}
 
-		qb.Execute()
-		qb.Reset()
+        err := qb.SyncExecute()
+        if err != nil {
+            log.Print(err)
+            errHandler.HandleErr(
+                &msg.MessageId,
+                err,
+                "insert",
+            )
+        }
+        qb.Reset()
 
-		for qb.ActiveQueries > 0 {
-			err := <-queryErrChan
-			if err != nil {
-				log.Print(err)
-				errHandler.HandleErr(
-					&msg.MessageId,
-					err,
-					"insert",
-				)
-			}
-			qb.ActiveQueries--
-		}
+        if len(parentSpans) > 0 {
+            spanMessage := st.SpanMessage{
+                EntityName: msg.EntityName,
+                MessageId:  msg.MessageId,
+                Spans:      parentSpans,
+            }
+
+            msg, err := json.Marshal(spanMessage)
+            if err != nil {
+                log.Printf("Serialization error: %s\n", err)
+            } else {
+                w.WriteMessages(context.Background(),
+                    kafka.Message{
+                        Key: []byte("msg"),
+                        Value: []byte(msg),
+                    },
+                )
+            }
+        }
 	}
 }

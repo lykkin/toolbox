@@ -39,6 +39,11 @@ func (qb *queryBatcher) Execute() {
 	qb.ActiveQueries++
 }
 
+func (qb *queryBatcher) SyncExecute() error {
+	batchQuery := "BEGIN BATCH " + strings.Join(qb.queries, "") + " APPLY BATCH;"
+	return qb.session.Query(batchQuery, qb.values...).Exec()
+}
+
 func NewQueryBatcher(session *gocql.Session, outChan chan error) *queryBatcher {
 	return &queryBatcher{
 		queries:       make([]string, 0),
