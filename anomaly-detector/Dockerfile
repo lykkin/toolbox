@@ -1,4 +1,5 @@
 FROM numenta/nupic
+ENV PYTHONUNBUFFERED 1
 COPY ./anomaly-detector/requirements.txt /
 RUN pip install -r /requirements.txt
 

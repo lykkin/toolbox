@@ -1,5 +1,5 @@
 FROM shared as builder
-ADD ./collector/src /go/src/span-collector
+ADD ./span-collector/src /go/src/span-collector
 WORKDIR /go/src/span-collector
 RUN go install .
 

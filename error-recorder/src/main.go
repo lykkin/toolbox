@@ -63,7 +63,6 @@ func main() {
 	msgChan := make(chan st.ErrorMessage)
 	startReader(msgChan)
 
-	/* debugging query
 	go func() {
 		for {
 			result := make(map[string]interface{})
@@ -72,7 +71,6 @@ func main() {
 			time.Sleep(10 * time.Second)
 		}
 	}()
-	*/
 
 	placeholderValues := []string{"?"}
 	for msg := range msgChan {

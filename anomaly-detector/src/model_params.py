@@ -44,7 +44,9 @@ MODEL_PARAMS = {
                 u'duration':    {
                     'fieldname': u'duration',
                     'name': u'duration',
-                    'resolution': 0.1,
+                    'resolution': 1.0,
+                    'w': 31,
+                    'n': 5000,
                     'type': 'RandomDistributedScalarEncoder',
                 },
             },

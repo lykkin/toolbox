@@ -8,10 +8,10 @@ services:
             dockerfile: shared/Dockerfile
         image: shared
 
-    collector:
+    span-collector:
         build:
             context: .
-            dockerfile: collector/Dockerfile
+            dockerfile: span-collector/Dockerfile
         ports:
             - "12345:12345"
         restart: on-failure

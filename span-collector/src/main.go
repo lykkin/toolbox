@@ -15,7 +15,7 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
-func NewSpanCollector(p *kafka.Writer) func(http.ResponseWriter, *http.Request) {
+func NewSpanCollector(p *kafka.Writer, rsw *kafka.Writer) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// TODO: set some proper response codes
 
@@ -37,6 +37,7 @@ func NewSpanCollector(p *kafka.Writer) func(http.ResponseWriter, *http.Request) 
 		entityName := entityNameParams[0]
 
 		incomingSpans := []st.Span{}
+		rootSpans := []st.Span{}
 		body, _ := ioutil.ReadAll(r.Body)
 		json.Unmarshal(body, &incomingSpans)
 
@@ -44,6 +45,9 @@ func NewSpanCollector(p *kafka.Writer) func(http.ResponseWriter, *http.Request) 
 			if msg, ok := s.IsValid(); !ok {
 				fmt.Fprintf(w, "Invalid span format: %s\n", msg)
 				return
+			}
+			if s.ParentId == "" { // TODO: check for entry point tag for this
+				rootSpans = append(rootSpans, s)
 			}
 		}
 		messageId, err := uuid.NewV4()
@@ -71,12 +75,31 @@ func NewSpanCollector(p *kafka.Writer) func(http.ResponseWriter, *http.Request) 
 			spanMessage.EntityId = entityId[0]
 		}
 
+		if len(rootSpans) > 0 {
+			rootMessage := st.SpanMessage{
+				EntityName: entityName,
+				MessageId:  messageId.String(),
+				Spans:      rootSpans,
+			}
+
+			rootMsg, err := json.Marshal(rootMessage)
+			if err != nil {
+				log.Printf("Root span serialization error: %s\n", err)
+			} else {
+				rsw.WriteMessages(context.Background(),
+					kafka.Message{
+						Key:   []byte("msg"),
+						Value: []byte(rootMsg),
+					},
+				)
+			}
+		}
+
 		msg, err := json.Marshal(spanMessage)
 		if err != nil {
 			fmt.Fprintf(w, "Serialization error: %s\n", err)
 			return
 		}
-
 		//log.Print("writing ", string(msg))
 		p.WriteMessages(context.Background(),
 			kafka.Message{
@@ -94,10 +117,18 @@ func main() {
 		Topic:    "incomingSpans",
 		Balancer: &kafka.LeastBytes{},
 	})
+
+	rootSpanWriter := kafka.NewWriter(kafka.WriterConfig{
+		Brokers:  []string{"kafka:9092"},
+		Topic:    "rootSpans",
+		Balancer: &kafka.LeastBytes{},
+	})
+
+	defer rootSpanWriter.Close()
 	defer w.Close()
 
 	r := mux.NewRouter()
-	r.HandleFunc("/", NewSpanCollector(w)).Methods("POST")
+	r.HandleFunc("/", NewSpanCollector(w, rootSpanWriter)).Methods("POST")
 	http.Handle("/", r)
 
 	log.Print("Listening on port 12345!")

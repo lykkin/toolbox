@@ -99,9 +99,6 @@ func main() {
 		session, err = cluster.CreateSession()
 	}
 
-	errChan := make(chan error)
-	qb := sdb.NewQueryBatcher(session, errChan)
-
 	// used to break events out into payloads to send
 	LicenseKeyToEvents := make(map[string]SpanList)
 
@@ -130,6 +127,8 @@ func main() {
 				// record the number of outstanding requests
 			}
 
+			batch := gocql.NewBatch(gocql.LoggedBatch)
+
 			// read off the return channel till all requests have come back
 			for ; numRequestsAwaiting != 0; numRequestsAwaiting-- {
 				result := <-resChan
@@ -140,37 +139,34 @@ func main() {
 				if result.Err == nil {
 					spanEvents := *result.Events
 					for _, s := range spanEvents {
-						if !qb.CanFit(2) {
-							qb.Execute()
-							qb.Reset()
-						}
-						qb.AddQuery(
+						batch.Query(
 							"DELETE FROM span_collector.spans WHERE trace_id = ? AND sent = false AND span_id = ?;",
-							&[]interface{}{
-								s.TraceId,
-								s.SpanId,
-							},
+							s.TraceId,
+							s.SpanId,
 						)
 						fields, spanValues := sdb.GetKeysAndValues(EventToSpan(s))
 						*fields = append(*fields, "entity_name", "license_key", "entity_id")
 						*spanValues = append(*spanValues, s.EntityName, result.LicenseKey, s.EntityId)
-						qb.AddQuery(
+						batch.Query(
 							"INSERT INTO span_collector.spans (sent, "+strings.Join(*fields, ",")+") VALUES (true, "+sdb.MakePlaceholderString(&placeholderValues, len(*fields))+");",
-							spanValues,
+							*spanValues...,
 						)
 					}
-					qb.Execute()
-					qb.Reset()
+					if batch.Size() >= 10 {
+						err := session.ExecuteBatch(batch)
+						if err != nil {
+							log.Print(err)
+							//TODO: errHandler.handleErr(&msg.MessageId, &err)
+						}
+						batch = gocql.NewBatch(gocql.LoggedBatch)
+					}
 				}
 			}
 
-			for qb.ActiveQueries > 0 {
-				err := <-errChan
-				if err != nil {
-					log.Print(err)
-					//TODO: errHandler.handleErr(&msg.MessageId, &err)
-				}
-				qb.ActiveQueries--
+			err := session.ExecuteBatch(batch)
+			if err != nil {
+				log.Print(err)
+				//TODO: errHandler.handleErr(&msg.MessageId, &err)
 			}
 
 			log.Print("waiting 10 seconds to send again")
