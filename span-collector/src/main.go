@@ -46,7 +46,7 @@ func NewSpanCollector(p *kafka.Writer, rsw *kafka.Writer) func(http.ResponseWrit
 				fmt.Fprintf(w, "Invalid span format: %s\n", msg)
 				return
 			}
-			if s.ParentId == "" { // TODO: check for entry point tag for this
+			if isEntry, ok := s.Tags["nr.entryPoint"]; ok && isEntry.(bool) { // TODO: check for entry point tag for this
 				rootSpans = append(rootSpans, s)
 			}
 		}

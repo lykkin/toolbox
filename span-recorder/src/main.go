@@ -20,19 +20,21 @@ func main() {
 	KEYSPACE := "span_collector"
 	TABLE_NAME := KEYSPACE + ".spans"
 	tableSchema := map[string]string{
-		"trace_id":    "text",
-		"span_id":     "text",
-		"parent_id":   "text",
-		"name":        "text",
-		"sent":        "Boolean",
-		"start_time":  "double",
-		"finish_time": "double",
-		"license_key": "text",
-		"entity_id":   "text",
-		"entity_name": "text",
-		"tags":        "map<text,text>",
+		"trace_id":     "text",
+		"span_id":      "text",
+		"parent_id":    "text",
+		"name":         "text",
+		"sent":         "Boolean",
+		"start_time":   "double",
+		"finish_time":  "double",
+		"license_key":  "text",
+		"entity_id":    "text",
+		"entity_name":  "text",
+		"string_tags":  "map<text,text>",
+		"boolean_tags": "map<text,Boolean>",
+		"number_tags":  "map<text,double>",
 	}
-	session, err := sdb.SetupCassandraSchema(KEYSPACE, TABLE_NAME, tableSchema, "trace_id, span_id, sent")
+	session, err := sdb.SetupCassandraSchema(KEYSPACE, TABLE_NAME, tableSchema, "trace_id, sent, span_id")
 	for err != nil {
 		log.Print("ran into an error while setting up cassandra, waiting 5 seconds: ", err)
 		time.Sleep(5 * time.Second)
@@ -64,7 +66,8 @@ func main() {
 		// TODO: break this up into smaller chunks, cassandra will only
 		// accept payloads less than 50kb
 		for _, span := range msg.Spans {
-			fields, spanValues := sdb.GetKeysAndValues(span)
+			record := st.SpanToRecord(span)
+			fields, spanValues := sdb.GetKeysAndValues(*record)
 
 			// Add on all the message level info
 			*fields = append(*fields, "entity_name")

@@ -5,15 +5,15 @@ import (
 )
 
 type SpanEvent struct {
-	TraceId    string            `json:"traceId"`
-	SpanId     string            `json:"guid"`
-	ParentId   string            `json:"parentId"`
-	Name       string            `json:"name"`
-	Timestamp  uint64            `json:"timestamp"`
-	Duration   float64           `json:"durationMs"`
-	Tags       map[string]string `json:"tags,omitempty"`
-	EntityName string            `json:"entityName"`
-	EntityId   string            `json:"entityId,omitempty"`
+	TraceId    string                 `json:"traceId"`
+	SpanId     string                 `json:"guid"`
+	ParentId   string                 `json:"parentId"`
+	Name       string                 `json:"name"`
+	Timestamp  uint64                 `json:"timestamp"`
+	Duration   float64                `json:"durationMs"`
+	Tags       map[string]interface{} `json:"tags,omitempty"`
+	EntityName string                 `json:"entityName"`
+	EntityId   string                 `json:"entityId,omitempty"`
 }
 
 type SpanList *[]SpanEvent

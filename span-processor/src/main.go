@@ -77,11 +77,12 @@ func populateEventMap(session *gocql.Session, interestingTraces *[]string, Licen
 			eventBucketPtr = new([]SpanEvent)
 			(*LicenseKeyToEvents)[licenseKey] = eventBucketPtr
 		}
-		err, spanInterface := sdb.ParseRow(st.Span{}, result)
+		err, recordInterface := sdb.ParseRow(st.SpanRecord{}, result)
 		if err != nil {
 			log.Print("uh oh", err)
 		}
-		spanEvent := SpanToEvent(spanInterface.(st.Span), result["entity_name"].(string), result["entity_id"].(string))
+		span := st.RecordToSpan(recordInterface.(st.SpanRecord))
+		spanEvent := SpanToEvent(*span, result["entity_name"].(string), result["entity_id"].(string))
 		*eventBucketPtr = append(*eventBucketPtr, spanEvent)
 	}
 
@@ -139,6 +140,7 @@ func main() {
 				if result.Err == nil {
 					spanEvents := *result.Events
 					for _, s := range spanEvents {
+						log.Print(s)
 						batch.Query(
 							"DELETE FROM span_collector.spans WHERE trace_id = ? AND sent = false AND span_id = ?;",
 							s.TraceId,
