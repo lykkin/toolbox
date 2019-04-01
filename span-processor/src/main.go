@@ -146,7 +146,8 @@ func main() {
 							s.TraceId,
 							s.SpanId,
 						)
-						fields, spanValues := sdb.GetKeysAndValues(EventToSpan(s))
+						// TODO: event to record
+						fields, spanValues := sdb.GetKeysAndValues(*st.SpanToRecord(EventToSpan(s)))
 						*fields = append(*fields, "entity_name", "license_key", "entity_id")
 						*spanValues = append(*spanValues, s.EntityName, result.LicenseKey, s.EntityId)
 						batch.Query(

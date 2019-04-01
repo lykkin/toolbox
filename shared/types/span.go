@@ -1,7 +1,6 @@
 package shared
 
 import (
-	"log"
 	"reflect"
 	"strings"
 )
@@ -78,7 +77,7 @@ func SpanToRecord(s Span) *SpanRecord {
 			numberTags[k] = v.(float64)
 			break
 		default:
-			//log.Print("unexpected type", t)
+			// TODO: log here?
 			break
 
 		}
