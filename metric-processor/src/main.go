@@ -14,14 +14,11 @@ import (
 )
 
 func SendMetrics(insightsKey string, metrics *MetricList, startTime uint64, interval uint64, resChan chan *RequestResult) {
-	payload := map[string]interface{}{
-		"version": "0.3.0",
-		"metric_buckets": []MetricBucket{
-			MetricBucket{
-				StartTime: startTime,
-				Interval:  interval,
-				Metrics:   *metrics,
-			},
+	payload := []map[string]interface{}{
+		map[string]interface{}{
+			"timestamp.ms": startTime,
+			"internal.ms":  interval,
+			"metrics":      *metrics,
 		},
 	}
 

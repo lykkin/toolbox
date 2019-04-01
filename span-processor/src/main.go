@@ -140,7 +140,6 @@ func main() {
 				if result.Err == nil {
 					spanEvents := *result.Events
 					for _, s := range spanEvents {
-						log.Print(s)
 						batch.Query(
 							"DELETE FROM span_collector.spans WHERE trace_id = ? AND sent = false AND span_id = ?;",
 							s.TraceId,

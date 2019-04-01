@@ -2,7 +2,7 @@ package main
 
 type MetricValue struct {
 	Count uint64  `json:"count"`
-	Sum   float64 `json:"total"`
+	Sum   float64 `json:"sum"`
 	Min   float64 `json:"min"`
 	Max   float64 `json:"max"`
 }
@@ -44,11 +44,6 @@ func (m *Metric) Add(duration float64) {
 	v.Sum += duration
 }
 
-type MetricBucket struct {
-	StartTime uint64     `json:"start_time_ms"`
-	Interval  uint64     `json:"interval_ms"`
-	Metrics   MetricList `json:"metrics"`
-}
 type MetricList []*Metric
 
 // Metric name -> Metric list

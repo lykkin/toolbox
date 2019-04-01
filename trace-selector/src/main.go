@@ -43,8 +43,8 @@ func startTraceMessageConsumer(session *gocql.Session) {
 			log.Fatal("dying")
 		}
 		traceId := string(m.Value)
-		log.Print("got an interesting trace", traceId)
-		err = session.Query("INSERT into "+TABLE_NAME+"(trace_id) VALUES (?);", traceId).Exec()
+		log.Print("got an interesting trace ", traceId)
+		err = session.Query("INSERT into "+TABLE_NAME+" (trace_id) VALUES (?);", traceId).Exec()
 		if err != nil {
 			fmt.Printf("Consumer error (on insert): %v\n", err)
 			log.Fatal("dying")
